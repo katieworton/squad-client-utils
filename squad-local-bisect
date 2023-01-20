@@ -1,0 +1,136 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2022-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+
+import argparse
+import logging
+import os
+import re
+import sys
+import requests
+from pathlib import Path
+from squad_client.core.api import SquadApi
+from squad_client.core.models import Squad, Build, TestRun
+from squad_client.shortcuts import download_tests as download
+from squad_client.shortcuts import get_build
+from squad_client.utils import getid
+
+squad_host_url = "https://qa-reports.linaro.org/"
+SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST",squad_host_url))
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def get_file(path):
+    if re.search(r'https?://', path):
+        request = requests.get(path, allow_redirects=True)
+        request.raise_for_status()
+        filename = path.split('/')[-1]
+        with open(filename, 'wb') as f:
+            f.write(request.content)
+        return filename
+    elif os.path.exists(path):
+        return path
+    else:
+        raise Exception(f"Path {path} not found")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Get a local bisect script within SQUAD")
+
+    parser.add_argument(
+        "--group",
+        required=True,
+        help="squad group",
+    )
+
+    parser.add_argument(
+        "--project",
+        required=True,
+        help="squad project",
+    )
+
+    parser.add_argument(
+        "--build",
+        required=True,
+        help="squad build",
+    )
+
+    parser.add_argument(
+        "--fail",
+        required=True,
+        help="Failing string in the format 'device/build_name/suite_name/test_name'.",
+    )
+
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Display debug messages",
+    )
+
+    return parser.parse_args()
+
+
+def run():
+    args = parse_args()
+    if args.debug:
+        logger.setLevel(level=logging.DEBUG)
+
+    base_group = Squad().group(args.group)
+    if base_group is None:
+        logger.error(f"Get group failed. Group not found: '{args.group}'.")
+        return -1
+
+    base_project = base_group.project(args.project)
+    if base_project is None:
+        logger.error(f"Get project failed. project not found: '{args.project}'.")
+        return -1
+
+    base_build = get_build(args.build, base_project)
+    if base_build is None:
+        logger.error(f"Get build failed. build not found: '{args.build}'.")
+        return -1
+
+    device_name,build_name,suite_name,test_name = args.fail.split('/')
+    environment = base_project.environment(device_name)
+    build = Build(base_build.id)
+    build_tests = build.tests(metadata__name=build_name, environment=environment.id).values()
+    # In theory there should only be one of those
+    test = list(build_tests)[0]
+    testrun = TestRun(getid(test.test_run))
+    tuxmake = get_file(f"{testrun.metadata.download_url}tuxmake_reproducer.sh")
+    build_cmdline = ""
+    for line in Path(tuxmake).read_text(encoding="utf-8").split("\n"):
+        print(line)
+        if '# tuxmake --runtime' in line:
+            line = re.sub(r"^# ", "", line)
+            build_cmdline = os.path.join(build_cmdline + line).strip()
+
+    tuxrun = get_file(f"{testrun.job_url}/reproducer")
+    for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
+        if 'tuxrun --runtime' in line:
+            line = re.sub("--kernel \S+ ", "", line)
+            line = re.sub("--modules \S+ ", "", line)
+            build_cmdline = os.path.join(build_cmdline + ' --results-hook "' + line.strip() + ' --tuxmake ./ --save-outputs --log-file -"').strip()
+
+    bisect_script = f"""#!/bin/bash
+# Set GOOD_SHA
+bad_sha={build.version}
+git bisect start $bad_sha $GOOD_SHA && git bisect run {build_cmdline}
+"""
+
+    filename = f'bisect-badsha-{build.version}-{device_name}-{build_name}-{suite_name}-{test_name}.sh'
+
+    Path(filename).write_text(bisect_script, encoding="utf-8")
+
+    print(f"{bisect_script}")
+    print(f"file created: {filename}")
+if __name__ == "__main__":
+    sys.exit(run())
