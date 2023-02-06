@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_file(path):
+    print(f"Getting file from {path}")
     if re.search(r'https?://', path):
         request = requests.get(path, allow_redirects=True)
         request.raise_for_status()
@@ -98,14 +99,22 @@ def run():
         logger.error(f"Get build failed. build not found: '{args.build}'.")
         return -1
 
-    device_name,build_name,suite_name,test_name = args.fail.split('/')
+    device_name, build_name, suite_name, test_name = args.fail.split('/')
     environment = base_project.environment(device_name)
     build = Build(base_build.id)
     build_tests = build.tests(metadata__name=build_name, environment=environment.id).values()
     # In theory there should only be one of those
     test = list(build_tests)[0]
     testrun = TestRun(getid(test.test_run))
-    tuxmake = get_file(f"{testrun.metadata.download_url}tuxmake_reproducer.sh")
+    print(f"Testrun id {testrun.id}")
+    download_url = testrun.metadata.download_url
+    if download_url is None:
+        if testrun.metadata.config is None:
+            print("There is no way to determine download_url")
+            return -1
+        download_url = testrun.metadata.config.replace("config", "")
+
+    tuxmake = get_file(f"{download_url}tuxmake_reproducer.sh")
     build_cmdline = ""
     for line in Path(tuxmake).read_text(encoding="utf-8").split("\n"):
         print(line)
@@ -113,26 +122,32 @@ def run():
             line = re.sub(r"^# ", "", line)
             build_cmdline = os.path.join(build_cmdline + line).strip()
 
-    tuxrun = get_file(f"{testrun.job_url}/reproducer")
-    for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
-        if 'tuxrun --runtime' in line:
-            line = re.sub("--kernel \S+ ", "", line)
-            line = re.sub("--modules \S+ ", "", line)
-            build_cmdline = os.path.join(build_cmdline + ' --results-hook "' + line.strip() + ' --tuxmake ./ --save-outputs --log-file -"').strip()
-
-    suite = base_project.suite("boot")
-    print("Trying to find good tests")
-    good_tests = Squad().tests(
-        build__id__lt=base_build.id,
-        suite__id=suite.id,
-        environment__id=environment.id,
-        metadata__name=build_name,
-        result=True,
-        ordering="-build_id",
-        count=1,
-    )
+    if suite_name in ["boot", "build"]:
+        suite = base_project.suite(suite_name)
+        print("Trying to find good tests")
+        good_tests = Squad().tests(
+            build__id__lt=base_build.id,
+            suite__id=suite.id,
+            environment__id=environment.id,
+            metadata__name=build_name,
+            result=True,
+            ordering="-build_id",
+            count=1,
+        )
+    else:
+        print(f"More needs to be done for {suite_name}")
+        good_tests = []
 
     print(good_tests)
+
+
+    if suite_name not in "build":
+        tuxrun = get_file(f"{testrun.job_url}/reproducer")
+        for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
+            if 'tuxrun --runtime' in line:
+                line = re.sub("--kernel \S+ ", "", line)
+                line = re.sub("--modules \S+ ", "", line)
+                build_cmdline = os.path.join(build_cmdline + ' --results-hook "' + line.strip() + ' --tuxmake ./ --save-outputs --log-file -"').strip()
 
     if len(good_tests) != 1:
         print("No good tests found!")
