@@ -147,6 +147,8 @@ def run():
             if 'tuxrun --runtime' in line:
                 line = re.sub("--kernel \S+ ", "", line)
                 line = re.sub("--modules \S+ ", "", line)
+                if suite_name in "boot":
+                    line = re.sub("--tests \S+ ", "", line)
                 build_cmdline = os.path.join(build_cmdline + ' --results-hook "' + line.strip() + ' --tuxmake ./ --save-outputs --log-file -"').strip()
 
     if len(good_tests) != 1:
