@@ -161,9 +161,15 @@ def run():
 
     bisect_script = f"""#!/bin/bash
 # Set GOOD_SHA
-bad_sha={build.version}
-good_sha={good_build.version}
-git bisect start $bad_sha $good_sha && git bisect run {build_cmdline}
+bad_sha="{build.version}"
+good_sha=$(git merge-base {build.version} {good_build.version})
+git checkout $good_sha
+{build_cmdline}
+if [[ $? -eq 0 ]]; then
+    git bisect start $bad_sha $good_sha && git bisect run {build_cmdline}
+else
+    echo "merge base $good_sha didn't work either aborting."
+fi
 """
 
     filename = f'bisect-badsha-{build.version}-{device_name}-{build_name}-{suite_name}-{test_name}.sh'
