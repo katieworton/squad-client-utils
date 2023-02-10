@@ -41,6 +41,23 @@ def get_file(path):
     else:
         raise Exception(f"Path {path} not found")
 
+def find_good_build(base_build, project, environment, build_name, suite_name, test_name):
+    builds = project.builds(id__lt=base_build.id, ordering="-id", count=10).values()
+    for build in builds:
+        logger.debug(f"Trying to find good test in build \"{build.version}\"", flush=True)
+        for testrun in build.testruns(environment=environment.id).values():
+            logger.debug(f"  - Trying to find {build_name} in {testrun.job_url}", flush=True)
+            if build_name == testrun.metadata.build_name:
+                logger.debug(f"    - Yay, found it, now looking for a passing {suite_name}/{test_name}", flush=True)
+                candidate_test = first(testrun.tests(metadata__suite=suite_name, metadata__name=test_name))
+                if candidate_test is None:
+                    logger.debug(f"      - no test in here :(", flush=True)
+                    continue
+                if candidate_test.result:
+                    logger.debug("************** FOUND IT *************", flush=True)
+                    return build
+    return None
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Get a local bisect script within SQUAD")
@@ -122,6 +139,7 @@ def run():
             line = re.sub(r"^# ", "", line)
             build_cmdline = os.path.join(build_cmdline + line).strip()
 
+    good_build = None
     if suite_name in ["boot", "build"]:
         suite = base_project.suite(suite_name)
         print("Trying to find good tests")
@@ -134,12 +152,16 @@ def run():
             ordering="-build_id",
             count=1,
         )
+        if len(good_tests) > 0:
+            good = first(good_tests)
+            good_build = Build(getid(good.build))
+
     else:
-        print(f"More needs to be done for {suite_name}")
-        good_tests = []
+        good_build = find_good_build(build, base_project, environment, build_name, suite_name, test_name)
 
-    print(good_tests)
-
+    if good_build is None:
+        print("No good build found")
+        return
 
     if suite_name not in "build":
         tuxrun = get_file(f"{testrun.job_url}/reproducer")
@@ -151,12 +173,6 @@ def run():
                     line = re.sub("--tests \S+ ", "", line)
                 build_cmdline = os.path.join(build_cmdline + ' --results-hook "' + line.strip() + ' --tuxmake ./ --save-outputs --log-file -"').strip()
 
-    if len(good_tests) != 1:
-        print("No good tests found!")
-        return
-
-    good = first(good_tests)
-    good_build = Build(getid(good.build))
     print(f"Found good test on build {good_build.version}")
 
     bisect_script = f"""#!/bin/bash
