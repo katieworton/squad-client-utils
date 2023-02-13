@@ -117,11 +117,19 @@ def run():
         return -1
 
     device_name, build_name, suite_name, test_name = args.fail.split('/')
+    metadata = first(Squad().suitemetadata(suite=suite_name, name=test_name, kind="test"))
+    if metadata is None:
+        print("There is no test named \"{suite_name}/{test_name}\"")
+        return -1
+
     environment = base_project.environment(device_name)
     build = Build(base_build.id)
-    build_tests = build.tests(metadata__name=build_name, environment=environment.id).values()
+    test = first(build.tests(metadata=metadata.id, environment=environment.id))
+    if test is None:
+        print(f"Build \"{build.version}\" has no test \"{suite_name}/{test_name}\" available on \"{device_name}\"")
+        return -1
+
     # In theory there should only be one of those
-    test = list(build_tests)[0]
     testrun = TestRun(getid(test.test_run))
     print(f"Testrun id {testrun.id}")
     download_url = testrun.metadata.download_url
