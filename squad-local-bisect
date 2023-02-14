@@ -131,7 +131,7 @@ def run():
 
     # In theory there should only be one of those
     testrun = TestRun(getid(test.test_run))
-    print(f"Testrun id {testrun.id}")
+    logger.debug(f"Testrun id {testrun.id}")
     download_url = testrun.metadata.download_url
     if download_url is None:
         if testrun.metadata.config is None:
@@ -142,7 +142,7 @@ def run():
     tuxmake = get_file(f"{download_url}tuxmake_reproducer.sh")
     build_cmdline = ""
     for line in Path(tuxmake).read_text(encoding="utf-8").split("\n"):
-        print(line)
+        logger.debug(line)
         if '# tuxmake --runtime' in line:
             line = re.sub(r"^# ", "", line)
             build_cmdline = os.path.join(build_cmdline + line).strip()
