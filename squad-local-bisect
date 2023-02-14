@@ -177,10 +177,12 @@ def run():
             if 'tuxrun --runtime' in line:
                 line = re.sub("--kernel \S+ ", "", line)
                 line = re.sub("--modules \S+ ", "", line)
-                if suite_name in "boot":
+                if suite_name in "boot" or "ltp-" in suite_name:
                     line = re.sub("--tests \S+ ", "", line)
                 build_cmdline = os.path.join(build_cmdline + ' --results-hook "' + line.strip() + ' --tuxmake ./ --save-outputs --log-file -"').strip()
 
+        if "ltp-" in suite_name:
+            build_cmdline = build_cmdline.replace('-"', f'- -- \'cd /opt/ltp && ./runltp -s {test_name}\'"')
     print(f"Found good test on build {good_build.version}")
 
     bisect_script = f"""#!/bin/bash
