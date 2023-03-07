@@ -8,7 +8,6 @@
 
 
 import argparse
-import difflib
 import json
 import logging
 import os
@@ -30,21 +29,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Compare builds within SQUAD")
 
     parser.add_argument(
-        "--group",
+        "--gpb",
         required=True,
-        help="squad group",
-    )
-
-    parser.add_argument(
-        "--project",
-        required=True,
-        help="squad project",
-    )
-
-    parser.add_argument(
-        "--build",
-        required=True,
-        help="squad build",
+        action="append",
+        nargs=3,
+        help="squad group,project,build",
     )
 
     parser.add_argument(
@@ -57,13 +46,6 @@ def parse_args():
 
     parser.add_argument(
         "--filename", help="Name of the output file where results will be written"
-    )
-
-    parser.add_argument(
-        "--table",
-        action="store_true",
-        default=False,
-        help="Display diff or table output",
     )
 
     parser.add_argument(
@@ -84,118 +66,86 @@ def run():
     if args.debug:
         logger.setLevel(level=logging.DEBUG)
 
-    groups = args.group.split(',')
-    base_group = Squad().group(groups[0])
-    if base_group is None:
-        logger.error(f"Get group failed. Group not found: '{args.group.split(',')[0]}'.")
-        return -1
-    if len(groups) > 1:
-        other_group = Squad().group(groups[1])
-        if other_group is None:
-            logger.error(f"Get group failed. Group not found: '{args.group.split(',')[1]}'.")
-            return -1
-    else:
-        other_group = base_group
+    files = []
+    index = 0
+    tests = {}
 
-    projects = args.project.split(',')
-    base_project = base_group.project(projects[0])
-    if base_project is None:
-        logger.error(f"Get project failed. project not found: '{args.project.split(',')[0]}'.")
-        return -1
-    if len(projects) > 1:
-        other_project = other_group.project(projects[1])
-        if other_project is None:
-            logger.error(f"Get project failed. project not found: '{args.project.split(',')[1]}'.")
-            return -1
-    else:
-        other_project = base_project
+    for (group_name, project_name, build_name) in args.gpb:
+        group = Squad().group(group_name)
+        project = group.project(project_name)
+        build = get_build(build_name, project)
 
-    builds = args.build.split(',')
-    base_build = get_build(builds[0], base_project)
-    if base_build is None:
-        logger.error(f"Get build failed. build not found: '{args.build.split(',')[0]}'.")
-        return -1
-    if len(builds) > 1:
-        other_build = get_build(builds[1], other_project)
-        if other_build is None:
-            logger.error(f"Get build failed. build not found: '{args.build.split(',')[1]}'.")
-            return -1
-    else:
-        other_build = base_build
+        environments = None
+        if args.environments:
+            environments = [project.environment(e) for e in args.environments.split(",")]
 
-    environments = None
-    if args.environments:
-        environments = [base_project.environment(e) for e in args.environments.split(",")]
+        suites = None
+        if args.suites:
+            suites = []
+            for s in args.suites.split(","):
+                suites += project.suites(slug__startswith=s).values()
 
-    suites = None
-    if args.suites:
-        suites = []
-        for s in args.suites.split(","):
-            suites += base_project.suites(slug__startswith=s).values()
+        file = f"{group.slug}-{project.slug}-{build.version}".replace('~', '')
+        file_with_ending = os.path.join(file + '.txt')
+        download_tests(project, build, environments, suites, file_with_ending)
+        file_open = open(file_with_ending, 'r')
+        file_lines = file_open.readlines()
 
-    logger.debug(f'base: {base_group}/{base_project}/{base_build}')
-    logger.debug(f'other: {other_group}/{other_project}/{other_build}')
+        for line in file_lines:
+            test_name, test_result = line.split()
+            if test_name not in tests.keys():
+                tests[test_name] = [None for e in args.gpb]
 
-    basefile = f"{base_group.slug}-{base_project.slug}-{base_build.version}".replace('~', '')
-    otherfile = f"{other_group.slug}-{other_project.slug}-{other_build.version}".replace('~', '')
-    basefile_with_ending = os.path.join(basefile + '.txt')
-    otherfile_with_ending = os.path.join(otherfile + '.txt')
-    logger.debug(f"base: {basefile}")
-    logger.debug(f"other: {otherfile}")
-    download_tests(base_project, base_build, environments, suites, basefile_with_ending)
-    download_tests(other_project, other_build, environments, suites, otherfile_with_ending)
+            tests[test_name][index] = test_result
 
-    basefile_open = open(basefile_with_ending, 'r')
-    otherfile_open = open(otherfile_with_ending, 'r')
-    basefile_lines = basefile_open.readlines()
-    otherfile_lines = otherfile_open.readlines()
-    difference = list(difflib.unified_diff(basefile_lines, otherfile_lines, fromfile=basefile_with_ending, tofile=otherfile_with_ending))
-    difference = ''.join(difference)
+        index += 1
+        files.append(file)
 
-    filename = args.filename or f'diff-{basefile}-vs-{otherfile}.txt'
-
-    with open(filename, 'w') as fp:
-        fp.write(difference)
-
-    tests = dict()
-    for line in basefile_lines:
-        test_name, test_result = line.split()
-        tests[test_name] = (test_result, None)
-    for line in otherfile_lines:
-        test_name, test_result = line.split()
-        if test_name in tests:
-            tests[test_name] = (tests[test_name][0], test_result)
-        else:
-            tests[test_name] = (None,test_result)
+        logger.debug(f"group: {group}, project: {project}, build: {build}")
 
     table_str = ""
     lines = list()
-    for test_name, test_result in tests.items():
-        if test_result[0] != test_result[1]:
-            lines.append(f"{test_result[0]} | {test_result[1]} | {test_name}")
+    for test_name in tests.keys():
+        test_results = tests[test_name]
+        line = ""
+        result = test_results[0]
+        use_line = False
+        for test in test_results:
+            if result != test:
+                use_line = True
+            line += f"{test} | "
+        line += f"{test_name}"
+        if use_line:
+            lines.append(line)
     table_str = '\n    '.join(lines)
 
-    table_filename = f'table-diff-{basefile}-vs-{otherfile}.txt'
+    table_filename = 'table-'
+    report = ""
+    first = True
+    headings = ""
+    for file in files:
+        if first:
+            table_filename += f'{file}'
+            first = False
+            report = f'Base file: {file}\n'
+            headings = f'base file'
+        else:
+            table_filename += f'-vs-{file}'
+            report += f'file {files.index(file)}: {file}\n'
+            headings += f' | file {files.index(file)}'
+    report += f'\n{headings} | test_name\n'
+    report += f'-----------------------\n'
 
-    report = f"""
-    Base file: {basefile}
-    This file: {otherfile}
-
-    base | this | test_name
-    -----------------------
+    table_filename += '.txt'
+    report += f"""
     {table_str}
 
-    diff file:  {filename}
     table file: {table_filename}"""
 
     with open(table_filename, 'w') as fp:
         fp.write(report)
 
-    if args.table:
-        print(report)
-    else:
-        print(difference)
-        print(f"file created: {filename}")
+    print(report)
 
 if __name__ == "__main__":
     sys.exit(run())
