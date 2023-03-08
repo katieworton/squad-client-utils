@@ -184,7 +184,7 @@ def run(raw_args=None):
 
     # Write the retest script name to a file if it isn't already there
     retest_filename = (
-        f"retest-{build.version}-{build_name}-{test_type}-{args.rerun_name}.sh"
+        f"retest-{build_name}-{test_type}-{args.rerun_name}.sh"
     )
     retest_list_filename = "retest_list.sh"
     with open(retest_list_filename, "a+") as f:
@@ -196,13 +196,13 @@ def run(raw_args=None):
         build_cmdline = ""
         results_file = f"results-{build.version}-{device_name}-{build_name}-{test_type}-{test_name}.json"
         tuxrun = get_file(f"{testrun.job_url}/reproducer")
-        for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
+        for line in Path(tuxrun).read_text(encoding="utf-8").split("\n").rstrip():
             if "tuxrun --runtime" in line:
                 line = re.sub("--tests \S+ ", "", line)
                 line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
                 line = re.sub("--parameters SHARD_NUMBER=\S+ ", "", line)
                 line = re.sub("--parameters SKIPFILE=\S+ ", "", line)
-                line = re.sub(f"{ltp_example_suite}=\S+", "command=5", line)
+                line = re.sub(f"{ltp_example_suite}=\S+", "--timeouts command=5", line)
                 build_cmdline = os.path.join(
                     build_cmdline
                     + line.strip()

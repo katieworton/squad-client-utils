@@ -11,7 +11,30 @@ from squad_client.core.models import Squad
 from squad_client.utils import first
 import wget
 
-# example: ./generate_skipfile_rerun_scripts.py --test_type ltp --devices "qemu-armv7" "qemu-arm64" "qemu-i386" "qemu-x86_64" --project linux-stable-rc-linux-6.1.y
+# example: ./generate_skipfile_rerun_scripts.py --test_type ltp --devices "qemu-armv7" "qemu-arm64" "qemu-i386" "qemu-x86_64"
+
+branch_tree_lookup_stable = {
+    "linux-4.14.y": "linux-stable-rc",
+    "linux-4.19.y": "linux-stable-rc",
+    "linux-5.4.y": "linux-stable-rc",
+    "linux-5.10.y": "linux-stable-rc",
+    "linux-5.15.y": "linux-stable-rc",
+    "linux-6.1.y": "linux-stable-rc",
+    "linux-6.2.y": "linux-stable-rc",
+}
+
+branch_tree_lookup_other = {
+    "linux-mainline": "master",
+    "linux-next": "master",
+}
+
+
+all_projects = [
+    f"{branch}-{tree_name}" for branch, tree_name in branch_tree_lookup_stable.items()
+] + [f"{branch}-{tree_name}" for tree_name, branch in branch_tree_lookup_other.items()]
+all_branches = [b for b in branch_tree_lookup_stable.keys()] + [
+    b for b in branch_tree_lookup_other.keys()
+]
 
 
 def parse_args():
@@ -24,7 +47,12 @@ def parse_args():
         nargs="+",
     )
 
-    parser.add_argument("--project", required=True, help="squad project")
+    parser.add_argument(
+        "--branches",
+        required=False,
+        default=all_branches,
+        help="Branches - defaults to all",
+    )
 
     parser.add_argument(
         "--devices", required=True, help="Devices to test on", nargs="+"
@@ -48,7 +76,6 @@ def parse_args():
 
 def run():
     args = parse_args()
-
     # run skipgen on skipfile
     skipgen_file_name = "skipgen.py"
     if os.path.exists(skipgen_file_name):
@@ -73,32 +100,32 @@ def run():
 
     group_name = "lkft"
     group = Squad().group(group_name)
-    project_name = args.project
-    project = group.project(project_name)
+    branches = args.branches
 
     devices = args.devices
-    kernel_versions = args.kernel_versions if args.kernel_versions else ["latest"]
     environments = ["all"]
     for skipreason in skips["skiplist"]:
         print(skipreason["url"])
         # Create a skiplist for each reason in the skiplist
         single_reason_skiplist = {"skiplist": [skipreason]}
         for device_name in devices:
-            for kernel_name in kernel_versions:
-                if args.kernel_versions:
-                    build = first(
-                        project.builds(
-                            count=1,
-                            ordering="-id",
-                            metadata__kernel_version=kernel_name,
-                        )
+            for branch_name in branches:
+                if branch_name in branch_tree_lookup_stable:
+                    project_name = (
+                        f"{branch_tree_lookup_stable[branch_name]}-{branch_name}"
                     )
-                else:
-                    build = first(project.builds(count=1, ordering="-id"))
+                elif branch_tree_lookup_other:
+                    project_name = (
+                        f"{branch_name}-{branch_tree_lookup_other[branch_name]}"
+                    )
+
+                print(project_name)
+                project = group.project(project_name)
+                build = first(project.builds(count=1, ordering="-id"))
                 for environment in environments:
                     skiptests = skipgen.get_skipfile_contents(
                         board=device_name,
-                        branch=kernel_name,
+                        branch=branch_name,
                         environment=environment,
                         skips=single_reason_skiplist,
                     )

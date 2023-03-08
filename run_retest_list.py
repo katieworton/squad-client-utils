@@ -14,9 +14,12 @@ import regex as re
 def read_result(filename, device, build_name):
     json_file_text = pathlib.Path(filename).read_text(encoding="utf-8")
     results_json = json.loads(json_file_text)
-    result = results_json["lava"]["command"]["result"]
+    try:
+        result = results_json["lava"]["command"]["result"]
+    except KeyError:
+        result = "result not found - possible timeout?"
     print(result)
-    with open("results.txt", "a") as f:
+    with open("results.csv", "a") as f:
         f.write(f"{filename},{device},{build_name},{result}\n")
 
 
