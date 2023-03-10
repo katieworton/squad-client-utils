@@ -7,7 +7,7 @@ import os
 import pathlib
 import sys
 from squad_client.core.api import SquadApi
-from squad_client.core.models import Squad
+from squad_client.core.models import Squad, ALL
 from squad_client.utils import first
 import wget
 
@@ -52,6 +52,7 @@ def parse_args():
         required=False,
         default=all_branches,
         help="Branches - defaults to all",
+        nargs="+",
     )
 
     parser.add_argument(
@@ -121,7 +122,25 @@ def run():
 
                 print(project_name)
                 project = group.project(project_name)
-                build = first(project.builds(count=1, ordering="-id"))
+                build_options = project.builds(count=50, ordering="-id")
+                # find the latest finished build - filtering for
+                # "finished=True" in the query doesn't seem to work
+                build = None
+                for build_option in build_options.values():
+                    if build_option.finished:
+                        print("Try", build_option.url)
+                        # Check there is an LTP test in this build option
+                        print("Search testruns")
+                        test_build = build_option
+                        testruns = test_build.tests(count=1, suite__slug__contains="ltp-syscalls")
+                        if testruns:
+                            build = build_option
+                            break
+                if build:
+                    print("Found build", build.url)
+                else:
+                    print("No build found")
+                    sys.exit(1)
                 for environment in environments:
                     skiptests = skipgen.get_skipfile_contents(
                         board=device_name,

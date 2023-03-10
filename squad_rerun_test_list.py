@@ -196,7 +196,7 @@ def run(raw_args=None):
         build_cmdline = ""
         results_file = f"results-{build.version}-{device_name}-{build_name}-{test_type}-{test_name}.json"
         tuxrun = get_file(f"{testrun.job_url}/reproducer")
-        for line in Path(tuxrun).read_text(encoding="utf-8").split("\n").rstrip():
+        for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
             if "tuxrun --runtime" in line:
                 line = re.sub("--tests \S+ ", "", line)
                 line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
