@@ -11,16 +11,36 @@ import sys
 import regex as re
 
 
-def read_result(filename, device, build_name):
-    json_file_text = pathlib.Path(filename).read_text(encoding="utf-8")
+def read_result(filename, log, device, build_name, results_file):
+    try:
+        json_file_text = pathlib.Path(filename).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        result = "results not found - check test was run"
+        reason = "results not found - check test was run"
+        with open(results_file, "a") as f:
+            f.write(f"{filename},{log},{device},{build_name},{result},{reason}\n")
+        return
+
     results_json = json.loads(json_file_text)
     try:
         result = results_json["lava"]["command"]["result"]
     except KeyError:
-        result = "result not found - possible timeout?"
-    print(result)
-    with open("results.csv", "a") as f:
-        f.write(f"{filename},{device},{build_name},{result}\n")
+        result = "result not found - investigate"
+    if result == "fail":
+        try:
+            reason = results_json["lava"]["job"]["error_msg"]
+        except KeyError:
+            reason = "reason not found - investigate"
+    else:
+        reason = "N/A"
+    try:
+        time = results_json["lava"]["command"]["duration"]
+    except KeyError:
+        time = "time not found"
+    print(result, reason)
+    with open(results_file, "a") as f:
+        # TODO helper writer function since I have mult writes that look same and haven't even done headings
+        f.write(f"{filename},{log},{device},{build_name},{result},{reason},{time}\n")
 
 
 def parse_args():
@@ -29,6 +49,7 @@ def parse_args():
     )
 
     parser.add_argument("--retest_file", default="retest_list.sh")
+    parser.add_argument("--results_file", default="results.csv")
     parser.add_argument(
         "--results_only",
         action="store_true",
@@ -57,8 +78,10 @@ def run():
                     subprocess.run(line, shell=True)
                 results_file = re.findall("--results (\S+)", line)[0]
                 device = re.findall("--device (\S+)", line)[0]
+                log = re.findall("--log-file (\S+)", line)[0]
+                # TODO - this will change
                 build_name = re.findall(f"results-(\S+)-{device}", line)[0]
-                read_result(results_file, device, build_name)
+                read_result(results_file, log, device, build_name, args.results_file)
 
 
 if __name__ == "__main__":
