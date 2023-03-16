@@ -83,6 +83,11 @@ def parse_args():
         help="",
     )
     parser.add_argument(
+        "--retest_list_filename",
+        default="retest_list.sh",
+        help="A list of scripts that contain reproducers",
+    )
+    parser.add_argument(
         "--allow_unfinished",
         default=False,
         action="store_true",
@@ -312,6 +317,8 @@ def run():
                             select_build_name,
                             "--test_type",
                             args.test_type,
+                            "--retest_list_filename",
+                            args.retest_list_filename,
                             "--debug",
                             "--rerun_name",
                             "-".join(skiptests),
