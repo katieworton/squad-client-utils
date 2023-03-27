@@ -54,13 +54,6 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--kernel_versions",
-        required=False,
-        help="kernel versions to test on",
-        nargs="+",
-    )
-
-    parser.add_argument(
         "--branches",
         required=False,
         default=all_branches,
@@ -71,19 +64,15 @@ def parse_args():
     parser.add_argument(
         "--devices", default=all_qemu_devices, help="Devices to test on", nargs="+"
     )
+    parser.add_argument(
+        "--environment", default=["all"], nargs="+"
+    )
 
     parser.add_argument(
-        "--preferred_build_names",
+        "--build_names",
         required=False,
-        default=["gcc-12-lkftconfig"],
-        help="The preferred build names",
-        nargs="+",
-    )
-    parser.add_argument(
-        "--other_accepted_build_names_regex",
-        required=False,
-        default=["gcc-\d\d-lkftconfig", "gcc-\d\d-lkftconfig.*"],
-        help="If the preferred build name doesn't exist, allow build names that match this regex",
+        default=["gcc-12-lkftconfig", "gcc-\d\d-lkftconfig", "gcc-\d\d-lkftconfig-64k_page_size"],
+        help="A list of regexs that capture the acceptable build names.",
         nargs="+",
     )
     parser.add_argument(
@@ -94,19 +83,30 @@ def parse_args():
     parser.add_argument(
         "--retest_list_filename",
         default="retest_list.sh",
-        help="A list of scripts that contain reproducers",
+        help="The name of the file that logs all the skip test rerun scripts.",
     )
     parser.add_argument(
         "--allow_unfinished",
         default=False,
         action="store_true",
-        help="",
+        help="Allow use of unfinished builds.",
     )
     parser.add_argument(
         "--allow_unrecognised_devices",
         default=False,
         action="store_true",
-        help=f"All devices which are not in the known devices list: {', '.join(all_qemu_devices)}",
+        help=f"Allow devices which are not in the known devices list: {', '.join(all_qemu_devices)}",
+    )
+    parser.add_argument(
+        "--local",
+        default=False,
+        action="store_true",
+        help="",
+    )
+    parser.add_argument(
+        "--run_dir",
+        default="run_dir",
+        help="The location where reproducer scripts and related logs should be stored.",
     )
 
     return parser.parse_args()
@@ -139,7 +139,7 @@ def run():
     group = Squad().group(group_name)
     branches = args.branches
 
-    environments_skipfile = ["all"]
+    environments_skipfile = args.environment
 
 
     if not args.allow_unrecognised_devices and not all(device in all_qemu_devices for device in args.devices):
@@ -185,21 +185,22 @@ def run():
                     # don't try rerunning if there are no tests to run for this branch
                     if not skiptests:
                         continue
-
+                    print(skiptests)
                     import squad_generate_reproducer
-
                     # for test_name in skiptests:
+                    print(f"RUN FOR {device_name}")
                     run_args = [
+                        "--run_dir",
+                        args.run_dir,
                         "--group",
                         group_name,
                         "--project",
                         project_name,
-                        "--build",
-                        build.version,
                         "--device_name",
                         device_name,
-                        "--build_name",
-                        select_build_name,
+                        "--build_name"] \
+                        + (args.build_names) + \
+                        [
                         "--test_type",
                         args.test_type,
                         "--retest_list_filename",
@@ -210,9 +211,18 @@ def run():
                         "--tests",
                     ] + skiptests
 
+                    if args.allow_unfinished:
+                        run_args.append("--allow_unfinished")
+                    if args.local:
+                        run_args.append("--local")
+
                     squad_generate_reproducer.run(run_args)
     print("Complete!")
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    import time
+    start_time = time.time()
+    result = run()
+    print(f"!!! {(time.time() - start_time)} seconds !!!")
+    sys.exit(result)

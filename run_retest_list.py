@@ -23,7 +23,7 @@ def read_result(filename, log, device, build_name, results_file):
 
     results_json = json.loads(json_file_text)
     try:
-        result = results_json["lava"]["command"]["result"]
+        result = results_json["lava"]["command"]["command"]["result"]
     except KeyError:
         result = "result not found - investigate"
     if result == "fail":

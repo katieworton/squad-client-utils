@@ -4,15 +4,19 @@
 import argparse
 import logging
 import os
+import pathlib
+import pprint
 import re
 import sys
 import requests
 from pathlib import Path
 from requests import HTTPError
 from squad_client.core.api import SquadApi
-from squad_client.core.models import Squad, Build, TestRun
+from squad_client.core.models import Squad, Build, TestRun, ALL, Test
 from squad_client.shortcuts import get_build
 from squad_client.utils import getid, first
+import wget
+import yaml
 
 squad_host_url = "https://qa-reports.linaro.org/"
 SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", squad_host_url))
@@ -28,6 +32,10 @@ def get_file(path, filename=None):
         request.raise_for_status()
         if not filename:
             filename = path.split("/")[-1]
+        else:
+            output_file = Path(filename)
+            output_file.parent.mkdir(exist_ok=True, parents=True)
+
         with open(filename, "wb") as f:
             f.write(request.content)
         return filename
@@ -37,32 +45,117 @@ def get_file(path, filename=None):
         raise Exception(f"Path {path} not found")
 
 
-def find_good_build(
-    base_build, project, environment, build_name, suite_name, test_name
-):
-    builds = project.builds(id__lt=base_build.id, ordering="-id", count=10).values()
-    for build in builds:
-        logger.debug(f'Trying to find good test in build "{build.version}"')
-        for testrun in build.testruns(environment=environment.id).values():
-            logger.debug(f"  - Trying to find {build_name} in {testrun.job_url}")
-            if build_name == testrun.metadata.build_name:
-                logger.debug(
-                    f"    - Yay, found it, now looking for a passing {suite_name}/{test_name}"
-                )
-                candidate_test = first(
-                    testrun.tests(metadata__suite=suite_name, metadata__name=test_name)
-                )
-                if candidate_test is None:
-                    logger.debug(f"      - no test in here :(")
-                    continue
-                if candidate_test.result:
-                    logger.debug("************** FOUND IT *************")
-                    return build
-    return None
-
-
 def read_results(result_file):
     pass
+
+
+def create_tuxsuite_plan(tuxrun, suite, results_file, test_name, retest_filename, log_file, retest_script_list):
+    with open(retest_script_list, "a+") as f:
+        f.seek(0)
+        retest_list = f.read()
+        if retest_filename not in retest_list:
+            f.write(retest_filename + "\n")
+    test_yaml_str = None
+    if not os.path.exists(retest_filename):
+        test_yaml_str = """
+version: 1
+name: full kernel validation for the master branch.
+description: Build and test linux kernel with every toolchain
+jobs:
+- name: test-command
+  tests:
+        """
+    else:
+        test_yaml_str = Path(retest_filename).read_text(encoding="utf-8")
+
+    plan = yaml.load(test_yaml_str)
+    print(plan)
+    for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
+        if "tuxrun --runtime" in line:
+            # parameters = re.findall("--(parameters) (\S+)", line)
+            # print(parameters)
+            timeouts = dict([(test, int(timeout)) for test, timeout in re.findall("--timeouts (\S+)=(\d+)", line)])
+            timeouts["command"] = 5
+            print(timeouts)
+            kernel = re.findall("--kernel (\S+)", line)
+            print(kernel)
+            rootfs = re.findall("--rootfs (\S+)", line)
+            print(rootfs)
+            modules = re.findall("--modules (\S+)", line)
+            print(modules)
+            device = re.findall("--device (\S+)", line)
+            print(device)
+            print(type(plan))
+            if not plan["jobs"][0]["tests"]:
+                plan["jobs"][0]["tests"] = []
+
+
+            plan["jobs"][0]["tests"].append({"timeouts": timeouts, "kernel": kernel[0], "rootfs": rootfs[0], "modules": modules[0], "device": device[0], "commands": [f'cd /opt/ltp && ./runltp -s {test_name}']})
+
+
+            pprint.pprint(plan)
+            print(yaml.dump(plan, sort_keys=False, default_flow_style=False))
+            with open('test.yaml', 'w') as f:
+                f.write(yaml.dump(plan, sort_keys=False, default_flow_style=False))
+
+    with open(retest_filename, 'w') as f:
+        f.write(yaml.dump(plan, sort_keys=False, default_flow_style=False))
+        f.close()
+        print(f"file appended: {retest_filename}")
+
+def update_tuxsuite_plan():
+    pass
+
+
+def update_tuxrun_script():
+    pass
+
+
+def create_tuxrun_script(
+    tuxrun, suite, results_file, test_name, retest_filename, log_file, retest_script_list
+):
+    build_cmdline = ""
+    # Write the retest script name to a file if it isn't already there
+    with open(retest_script_list, "a+") as f:
+        f.seek(0)
+        retest_list = f.read()
+        if retest_filename not in retest_list:
+            f.write(retest_filename + "\n")
+    for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
+        if "tuxrun --runtime" in line:
+            line = re.sub("--tests \S+ ", "", line)
+            line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
+            line = re.sub("--parameters SHARD_NUMBER=\S+ ", "", line)
+            line = re.sub("--parameters SKIPFILE=\S+ ", "", line)
+            line = re.sub(f"{suite}=\S+", "--timeouts command=5", line)
+            build_cmdline = os.path.join(
+                build_cmdline
+                + line.strip()
+                + f' --save-outputs --results {results_file} --log-file -"'
+            ).strip()
+
+    build_cmdline = build_cmdline.replace(
+        '-"', f"{log_file} -- 'cd /opt/ltp && ./runltp -s {test_name}'"
+    )
+
+    if Path(retest_filename).exists():
+        bisect_script_append = f"""
+{build_cmdline}
+"""
+        f = Path(retest_filename).open("a")
+        f.write(bisect_script_append)
+        f.close()
+        print(f"{build_cmdline}")
+        print(f"file appended: {retest_filename}")
+
+    else:
+        bisect_script = f"""#!/bin/bash
+{build_cmdline}
+"""
+        Path(retest_filename).write_text(bisect_script, encoding="utf-8")
+
+        print(f"{bisect_script}")
+        print(f"file created: {retest_filename}")
 
 
 def parse_args(raw_args):
@@ -79,12 +172,6 @@ def parse_args(raw_args):
         required=True,
         help="squad project",
     )
-
-    parser.add_argument(
-        "--build",
-        required=True,
-        help="squad build",
-    )
     parser.add_argument(
         "--test_type",
         required=False,
@@ -93,9 +180,10 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
-        "--build_name",
+        "--build_names",
         required=True,
         help="the build name (for example, gcc-12-lkftconfig)",
+        nargs="+",
     )
 
     parser.add_argument(
@@ -125,22 +213,179 @@ def parse_args(raw_args):
         default="retest_list.sh",
         help="Name for the group of reruns",
     )
+    parser.add_argument(
+        "--allow_unfinished",
+        default=False,
+        action="store_true",
+        help="",
+    )
+    parser.add_argument(
+        "--local",
+        default=False,
+        action="store_true",
+        help="",
+    )
+    parser.add_argument(
+        "--run_dir",
+        default="run_dir",
+        help="",
+    )
 
     return parser.parse_args(raw_args)
 
-def find_build(regex_exps, build_options, suite_names, environments, project, allow_unfinished, devices):
-    # download compare builds with a name that can be imported
-    compare_builds_url = "https://raw.githubusercontent.com/Linaro/squad-client-utils/master/squad-compare-builds"
-    compare_builds_script_name = "squad_compare_builds.py"
-    # Grab download_tests from squad_compare_builds
-    if pathlib.Path(compare_builds_script_name).exists():
-        os.remove(compare_builds_script_name)
-    filename = wget.download(compare_builds_url, out=compare_builds_script_name)
-    print("Filename", filename)
-    from squad_compare_builds import download_tests
+
+def find_good_build(
+    project, environment, build_names, suite_name, version=None, testrun_id=None
+):
+    if version:
+        builds = project.builds(
+            ordering="-id", count=10, version__startswith=version
+        ).values()
+    else:
+        builds = project.builds(ordering="-id", count=10).values()
+
+    for build in builds:
+        logger.debug(f'Trying to find good test in build "{build.version}"')
+        if testrun_id:
+            testruns = build.testruns(
+                environment=environment.id, prefetch_metadata=True, testrun=testrun_id
+            )
+        else:
+            testruns = build.testruns(
+                environment=environment.id, prefetch_metadata=True
+            )
+
+        for testrun in testruns.values():
+            if not testrun.metadata.build_name:
+                print("No metadata found!")
+                continue
+            for build_name in build_names:
+                logger.debug(f"  - Trying to find {build_name} in {testrun.job_url}")
+                print(f"^{build_name}$")
+                print(f"{testrun.metadata.build_name}")
+                re_match = re.match(f"^{build_name}$", testrun.metadata.build_name)
+                if re_match:
+                    logger.debug(
+                        f"    - Yay, found it, now looking for a passing {suite_name}"
+                    )
+                    candidate_test = first(
+                        testrun.tests(
+                            metadata__suite=suite_name, completed=True, result=True
+                        )
+                    )
+                    if candidate_test is None:
+                        logger.debug(f"      - no test in here :(")
+                        continue
+                    logger.debug("************** FOUND IT *************")
+                    print(testrun)
+                    return build, testrun
+
+    return None, None
+
+
+def download(
+    project,
+    build,
+    build_names,
+    filter_envs=None,
+    filter_suites=None,
+    format_string=None,
+    output_filename=None,
+):
+    all_environments = project.environments(count=ALL)
+    all_suites = project.suites(count=ALL)
+    all_testruns = build.testruns(count=ALL, prefetch_metadata=True)
+
+    filters = {
+        "count": ALL,
+        "fields": "id,name,status,environment,suite,test_run,build,short_name",
+    }
+
+    envs = None
+    if filter_envs:
+        filters["environment__id__in"] = ",".join([str(e.id) for e in filter_envs])
+        envs = ",".join([e.slug for e in filter_envs])
+
+    suites = None
+    if filter_suites:
+        filters["suite__id__in"] = ",".join([str(s.id) for s in filter_suites])
+        suites = ",".join([s.slug for s in filter_suites])
+        print("suites", suites)
+        print(filters)
+
+    filename = output_filename or f"{build.version}.txt"
+    logger.info(
+        f'Downloading test results for {project.slug}/{build.version}/{envs or "(all envs)"}/{suites or "(all suites)"} to {filename}'
+    )
+
+    if format_string is None:
+        format_string = "{test.environment.slug}/{test.id}/{test.name} {test.status}"
+
+    tests = build.tests(**filters)
+    output = []
+    if not tests:
+        print("There are no tests to print")
+    testrun = None
+    tests_with_build_name = []
+    for test in tests.values():
+        if testrun:
+            break
+        test.build = build
+        test.environment = all_environments[getid(test.environment)]
+        test.suite = all_suites[getid(test.suite)]
+        test.test_run = all_testruns[getid(test.test_run)]
+        for build_name in build_names:
+            re_match = re.match(f"^{build_name}$", test.test_run.metadata.build_name)
+            print(f"rematch ^{build_name}$ {test.test_run.metadata.build_name}")
+            if re_match:
+                print("match", test.test_run.metadata.build_name)
+                print("adding", test.short_name)
+                tests_with_build_name.append(test.test_run)
+                output.append(format_string.format(test=test))
+                testrun = test.test_run
+                break
+
+    # output.sort()
+
+    with open(filename, "w") as fp:
+        for line in output:
+            fp.write(line + "\n")
+    print("DOWNLOAD TESTS", tests_with_build_name)
+    # sys.exit(0)
+    return testrun
+
+
+def download_tests(project, build, build_names, environments, suites, output_filename):
+    testrun = download(
+        project,
+        build,
+        build_names,
+        environments,
+        suites,
+        "{test.environment.slug}/{test.test_run.metadata.build_name}/{test.test_run.id}/{test.name} {test.status}",
+        output_filename,
+    )
+    print("DOWNLOAD_TESTS_2", testrun)
+    return testrun
+
+
+def find_build(
+    regex_exps,
+    build_options,
+    suite_names,
+    environments,
+    project,
+    allow_unfinished,
+    device_name,
+    run_dir,
+):
 
     build = None
-    select_build_name = None
+    build_name = None
+    tests = None
+    testrun = None
+    suites = None
+
     for build_option in build_options.values():
         # only pick builds that are finished
         if not build_option.finished and not allow_unfinished:
@@ -149,63 +394,83 @@ def find_build(regex_exps, build_options, suite_names, environments, project, al
         # stop search if we have found build
         if build:
             break
-        test_result_filename = "test.txt"
-        suites = None
         if suite_names:
             suites = []
             for s in suite_names:
                 suites += project.suites(slug=s).values()
         print("Suites", suites)
         print("Environments", environments)
-        import traceback
-        try:
-            download_tests(project=project, build=build_option, suites=suites, environments=environments, output_filename=test_result_filename)
-        except KeyError as e:
-            print(traceback.format_exc())
-            print("keyerror here", e)
+        test_result_filename = f"{run_dir}/result_lookup/{project.id}{build_option.id}{suites}{environments}{build_option.version}"
+        if not os.path.exists(test_result_filename):
+            import traceback
+
+            try:
+                # TODO REUSE IF EXISTS
+                testrun = download_tests(
+                    project=project,
+                    build=build_option,
+                    build_names=regex_exps,
+                    suites=suites,
+                    environments=environments,
+                    output_filename=test_result_filename,
+                )
+                # print("len tests", len(tests))
+                if not testrun:
+                    print("no test run")
+                    continue
+            except KeyError as e:
+                print(traceback.format_exc())
+                print("keyerror here", e)
+                continue
+        # If it is empty, we know there is no testrun in here so try the next build
+        elif not os.path.getsize(test_result_filename):
             continue
-        test_results = pathlib.Path(test_result_filename).read_text(encoding="utf-8").split("\n")
-
-        device_build_names = {}
-
-        # find all the gcc versions for each arch and pick highest
-        for line in test_results:
-            if build:
-                break
-            if len(line):
-                device, build_name, suite_name, test_name_and_result = line.split("/")
-                if device in device_build_names:
-                    device_build_names[device].add(build_name)
-                else:
-                    print("device", device)
-                    device_build_names[device] = {build_name}
-
-        pprint.pprint(f"device build names {device_build_names}")
-        if all(item in device_build_names for item in devices):
-            print("all devices accounted for")
-            for regex_exp in regex_exps:
-                if build:
-                    break
-                for build_name_list in device_build_names.values():
-                    for build_name_option in build_name_list:
-                        re_match = re.match(f"^{regex_exp}$", build_name_option)
-                        if not re_match:
-                            print(f"no match {build_name_option} regex {regex_exp}")
-                            build = None
-                            select_build_name = None
-                            continue
-                        else:
-                            print("found build name for this device regex")
-                            build = build_option
-                            select_build_name = regex_exp
-                            break
-                    if not build:
-                        continue
         else:
-            print("keep trying", device_build_names.keys())
+            test_results = (
+                pathlib.Path(test_result_filename)
+                .read_text(encoding="utf-8")
+                .split("\n")
+            )
+            line = test_results[0]
+            (
+                device,
+                test_build_name,
+                testrun_id,
+                suite_name,
+                test_name_and_result,
+            ) = line.split("/")
+            print("testrun id", testrun_id)
+            testrun = TestRun(testrun_id)
+
+        if not tests or not testrun:
+            print("no tests")
             continue
 
-    return build, select_build_name
+        else:
+            continue
+
+    if not testrun:
+        print(
+            f"No test for {project.id}-{build_option.id}-{suites}-{environments}-{build_option.version}"
+        )
+    else:
+        print(testrun)
+        print(testrun.metadata)
+        print(testrun.metadata.build_name)
+        build_name = testrun.metadata.build_name
+        build = testrun.build
+    return build, build_name, testrun
+
+
+def create_run_dir(dir_name):
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
+    if not os.path.exists(dir_name + "/result_lookup"):
+        os.makedirs(dir_name + "/result_lookup")
+    if not os.path.exists(dir_name + "/retest"):
+        os.makedirs(dir_name + "/retest")
+    if not os.path.exists(dir_name + "/reproducers"):
+        os.makedirs(dir_name + "/reproducers")
 
 
 def run(raw_args=None):
@@ -223,16 +488,16 @@ def run(raw_args=None):
         logger.error(f"Get project failed. project not found: '{args.project}'.")
         return -1
 
-    base_build = get_build(args.build, base_project)
-    if base_build is None:
-        logger.error(f"Get build failed. build not found: '{args.build}'.")
-        return -1
+    create_run_dir(args.run_dir)
+    # base_build = get_build(args.build, base_project)
+    # if base_build is None:
+    #     logger.error(f"Get build failed. build not found: '{args.build}'.")
+    #     return -1
 
     device_name = args.device_name
-    build_name = args.build_name
+    # build_name = args.build_name
+    print(f"build name {args.build_names}")
     test_type = args.test_type
-
-    rerun_test_list = args.tests
 
     ltp_example_suite = "ltp-syscalls"
     metadata = first(Squad().suitemetadata(suite=ltp_example_suite, kind="test"))
@@ -243,95 +508,86 @@ def run(raw_args=None):
 
     # get a build
     suite_names = ["ltp-syscalls"]
-    build_options = base_project.builds(count=5, ordering="-id")
+    build_options = base_project.builds(count=7, ordering="-id")
     build = None
-    build, select_build_name = find_build(args.preferred_build_names, build_options, suite_names, environments, base_project, args.allow_unfinished, args.devices)
-    print("try regex gcc-..-lkftconfig")
+    testrun_id = None
+    environment = base_project.environment(args.device_name)
+    # TODO - possible optimisation of regex over local reproducers? perhaps a "fast-mode" parameter with an explanation would help
 
-    print("build_options", build_options)
-    build_options = base_project.builds(count=15, ordering="-id")
-    print("build options", build_options)
-    if not build:
-        print("try again!!")
-        build, select_build_name = find_build(args.other_accepted_build_names_regex, build_options, suite_names, environments, base_project, args.allow_unfinished, args.devices)
-
-    if build:
-        print("Found build", build.url)
-    else:
-        print("No build found")
-
-        print(f"No build found for {branch_name}!")
-        print("logging issue in .issues_build.csv")
-        f = pathlib.Path(".issues_build.csv").open("a")
-        f.write(f"No build found for, {branch_name}!\n")
-        f.close()
-
-    print("Build", build)
-
-
-
-
-
-    environment = base_project.environment(device_name)
-    if environment is None:
-        print(f'There is no environment for "{device_name}"')
-        return -1
-    build = Build(base_build.id)
-    test_options = build.tests(metadata=metadata.id, environment=environment.id)
-    test = None
-
-    # for test_option in test_options.values():
-    #     testrun = TestRun(getid(test_option.test_run))
-    #     if testrun.metadata.build_name == build_name:
-    #         test = test_option
-    #         print(f"Yes {testrun.metadata.build_name}")
-    #         break
-    #     else:
-    #         print(f"Not {testrun.metadata.build_name}")
-    # # find a back up if needed
-    # if not test:
-    #     alternatives = ["gcc-10-lkftconfig", "gcc-11-lkftconfig", "gcc-12-lkftconfig"]
-    #     for test_option in test_options.values():
-    #         testrun = TestRun(getid(test_option.test_run))
-    #         if testrun.metadata.build_name in alternatives:
-    #             test = test_option
-    #             print(f"Yes {testrun.metadata.build_name}")
-    #             break
-    #         else:
-    #             print(f"Not {testrun.metadata.build_name}")
-    # # find a back up if needed
-    # see if file exists that matches regex:
-    reproducer_regex = f"reproducer-{test_type}-{device_name}-{build.version}-({select_build_name}).sh"
-    found_build_name = None
-    for filename in os.listdir("."):
-        m = re.match(reproducer_regex, filename)
-        if m:
-            found_build_name = m.group(1)
-            print(found_build_name)
-    # if no reproducer found, grab test
-    if not found_build_name:
-        for test_option in test_options.values():
-            testrun = TestRun(getid(test_option.test_run))
-            # prefer exact matches
-            if re.match(f"^{build_name}$", testrun.metadata.build_name):
-                test = test_option
-                print(f"Yes {testrun.metadata.build_name}, ^{build_name}$")
-                break
-        if not test:
-            for test_option in test_options.values():
-                if re.match(f"{build_name}", testrun.metadata.build_name):
-                    test = test_option
-                    print(f"Yes {testrun.metadata.build_name}, {build_name}")
+    reproducer_regex = f"/([^-]*)/(gcc-.*)/([\d]*).sh"
+    build_name = None
+    found_version = None
+    reproducer_dir = (
+        f"{args.run_dir}/reproducers/{test_type}/{device_name}/{base_project.slug}/"
+    )
+    if os.path.exists(reproducer_dir):
+        for build_name_dir in os.listdir(reproducer_dir):
+            print(build_name_dir)
+            # see if there is matching build name
+            for regex_exp in args.build_names:
+                if build_name:
                     break
+                print(f"^{regex_exp}$")
+                print(f"{build_name_dir}")
+                re_match = re.match(f"^{regex_exp}$", build_name_dir)
+                if not re_match:
+                    print(f"no match {build_name_dir} regex {regex_exp}")
+                    build_name = None
+                    continue
                 else:
-                    print(f"Not {testrun.metadata.build_name}, {build_name}")
+                    print("found build name for this device regex")
+                    build_name = build_name_dir
+                    test_id_reproducers = os.listdir(f"{reproducer_dir}/{build_name}")
+                    if test_id_reproducers:
+                        print(test_id_reproducers)
+                        testrun_id, file_format = test_id_reproducers[0].split(".")
+                        break
+                    else:
+                        print("false", test_id_reproducers)
 
-        if test is None:
-            print(f'Build "{build.version}" has no test available on "{device_name}"')
-            return -1
+    testrun = None
+    if testrun_id:
+        print("reuse build", testrun_id)
+        # test = Test(test_id)
+        testrun = TestRun(testrun_id)
+        build = Build(getid(testrun.build))
+        build_name = testrun.metadata.build_name
+
+    else:
+        print("find build")
+        build, build_name, testrun = find_build(
+            args.build_names,
+            build_options,
+            suite_names,
+            [environment],
+            base_project,
+            args.allow_unfinished,
+            args.device_name,
+            args.run_dir,
+        )
+        try:
+            build = Build(getid(testrun.build))
+            build_name = testrun.metadata.build_name
+        except AttributeError as e:
+            print(f"{e}")
+
+    if not build or not build_name or not testrun:
+        print("No build found", build, build_name, testrun)
+
+        print(
+            f"No build found for {args.project} {args.device_name} {test_type} {args.tests}"
+        )
+        print("logging issue in .issues_build.csv")
+        f = pathlib.Path(args.run_dir, ".issues_build.csv").open("a")
+        f.write(
+            f"No build found for {args.project} {args.device_name} {test_type} {args.tests}!\n"
+        )
+        f.close()
+    else:
+        print("Build", build)
+        print("Found build", build.url)
 
         # In theory there should only be one of those
-        testrun = TestRun(getid(test.test_run))
         logger.debug(f"Testrun id {testrun.id}")
         download_url = testrun.metadata.download_url
         if download_url is None:
@@ -340,77 +596,42 @@ def run(raw_args=None):
                 return -1
             download_url = testrun.metadata.config.replace("config", "")
 
-    # Write the retest script name to a file if it isn't already there
-    retest_filename = (
-        f"retest-{test_type}-{args.rerun_name}.sh"
-    )
-    with open(args.retest_list_filename, "a+") as f:
-        f.seek(0)
-        retest_list = f.read()
-        if retest_filename not in retest_list:
-            f.write(retest_filename + "\n")
+        for test_name in args.tests:
+            results_file = f"{args.run_dir}/results-{test_type}-{test_name}-{device_name}-{build.version}-{testrun.metadata.build_name}.json"
+            reproducer_file = f"{reproducer_dir}/{build_name}/{testrun.id}.sh"
+            log_file = f"{args.run_dir}/log-{test_type}-{test_name}-{device_name}-{build.version}-{testrun.metadata.build_name}.txt"
 
-    for test_name in rerun_test_list:
-        build_cmdline = ""
-        if not found_build_name:
-            results_file = f"results-{test_type}-{test_name}-{device_name}-{build.version}-{testrun.metadata.build_name}.json"
-            reproducer_file = f"reproducer-{test_type}-{device_name}-{build.version}-{testrun.metadata.build_name}.sh"
-            log_file = f"log-{test_type}-{test_name}-{device_name}-{build.version}-{testrun.metadata.build_name}.txt"
-            print(testrun.job_url)
-            print(testrun.url)
-        else:
-            results_file = f"results-{test_type}-{test_name}-{device_name}-{build.version}-{found_build_name}.json"
-            reproducer_file = f"reproducer-{test_type}-{device_name}-{build.version}-{found_build_name}.sh"
-            log_file = f"log-{test_type}-{test_name}-{device_name}-{build.version}-{found_build_name}.txt"
-
-        try:
-            if not Path(reproducer_file).exists():
-                tuxrun = get_file(f"{testrun.job_url}/reproducer", reproducer_file)
+            try:
+                if not Path(reproducer_dir).exists():
+                    tuxrun = get_file(f"{testrun.job_url}/reproducer", reproducer_file)
+                else:
+                    print("reusing reproducer", reproducer_file)
+                    tuxrun = reproducer_file
+            except HTTPError:
+                print(f"Reproducer not found at {testrun.job_url}!")
+                print("logging issue in .issues.csv")
+                f = Path(args.run_dir, ".issues.csv").open("a")
+                f.write(
+                    f"Reproducer not found for test run,{testrun.url} ,{testrun.job_url}, {build.version}, {build.url}\n"
+                )
+                f.close()
+                return 1
+            if args.local:
+                retest_filename = (
+                    f"{args.run_dir}/retest/{test_type}-{args.rerun_name}.sh"
+                )
+                retest_file_list = os.path.join(args.run_dir, args.retest_list_filename)
+                create_tuxrun_script(
+                    tuxrun, ltp_example_suite, results_file, test_name, retest_filename, log_file, retest_file_list
+                )
             else:
-                print("reusing reproducer", reproducer_file)
-                tuxrun = reproducer_file
-        except HTTPError:
-            print(f"Reproducer not found at {testrun.job_url}!")
-            print("logging issue in .issues.csv")
-            f = Path(".issues.csv").open("a")
-            f.write(f"Reproducer not found for test run,{testrun.url} ,{testrun.job_url}, {build.version}, {build.url}\n")
-            f.close()
-            return 1
-        for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
-            if "tuxrun --runtime" in line:
-                line = re.sub("--tests \S+ ", "", line)
-                line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
-                line = re.sub("--parameters SHARD_NUMBER=\S+ ", "", line)
-                line = re.sub("--parameters SKIPFILE=\S+ ", "", line)
-                line = re.sub(f"{ltp_example_suite}=\S+", "--timeouts command=5", line)
-                build_cmdline = os.path.join(
-                    build_cmdline
-                    + line.strip()
-                    + f' --save-outputs --results {results_file} --log-file -"'
-                ).strip()
-
-        build_cmdline = build_cmdline.replace(
-            '-"', f"{log_file} -- 'cd /opt/ltp && ./runltp -s {test_name}'"
-        )
-
-        if Path(retest_filename).exists():
-            bisect_script_append = f"""
-    {build_cmdline}
-    """
-            f = Path(retest_filename).open("a")
-            f.write(bisect_script_append)
-            f.close()
-            print(f"{build_cmdline}")
-            print(f"file appended: {retest_filename}")
-
-        else:
-            bisect_script = f"""#!/bin/bash
-    {build_cmdline}
-    """
-            Path(retest_filename).write_text(bisect_script, encoding="utf-8")
-
-            print(f"{bisect_script}")
-            print(f"file created: {retest_filename}")
+                retest_filename = (
+                    f"{args.run_dir}/retest/{test_type}-{base_project.slug}.yaml"
+                )
+                retest_file_list = os.path.join(args.run_dir, args.retest_list_filename)
+                create_tuxsuite_plan(
+                    tuxrun, ltp_example_suite, results_file, test_name, retest_filename, log_file, retest_file_list
+                )
 
 
 if __name__ == "__main__":
