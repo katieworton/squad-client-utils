@@ -8,12 +8,16 @@
 
 
 import argparse
+import fnmatch
 import json
 import logging
 import os
 import re
 import sys
+import yaml
+import pprint
 import subprocess as sp
+from urllib import request
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad
 from squad_client.shortcuts import download_tests as download
@@ -70,6 +74,38 @@ def run():
     index = 0
     tests = {}
 
+    known_issue_files = "kselftests-production.yaml kvm-unit-tests.yaml libhugetlbfs-production.yaml ltp-production.yaml network-basic-tests.yaml packetdrill-tests.yaml perf.yaml spectre-meltdown-checker.yaml v4l2-compliance.yaml"
+    known_issues_patterns = []
+    group_name, project_name, build_name = args.gpb[0]
+    for file in known_issue_files.split():
+
+        x = request.urlopen(f'https://raw.githubusercontent.com/Linaro/qa-reports-known-issues/master/{file}')
+        issues = yaml.safe_load(x)
+        for tmp in issues["projects"][0]["known_issues"]:
+            environments = []
+            projects = []
+            for key,value in tmp.items():
+                if 'environments' in tmp.keys():
+                    environments = tmp["environments"]
+                else:
+                    for matrix in tmp["matrix_apply"]:
+                        environments.append(matrix["environments"])
+
+                if 'projects' in tmp.keys():
+                    projects = tmp["projects"]
+                else:
+                    for matrix in tmp["matrix_apply"]:
+                        projects.append(matrix["projects"])
+                if "test_names" in key:
+                    for argh in value:
+                        if f'{group_name}/{project_name}' in projects:
+                            for env in environments:
+                                known_issues_patterns.append(f"{env}/*{argh.replace('.', '?')}")
+                elif "test_name" in key:
+                    if f'{group_name}/{project_name}' in projects:
+                        for env in environments:
+                            known_issues_patterns.append(f"{env}/*{value.replace('.', '?')}")
+
     for (group_name, project_name, build_name) in args.gpb:
         group = Squad().group(group_name)
         project = group.project(project_name)
@@ -114,6 +150,17 @@ def run():
             if result != test:
                 use_line = True
             line += f"{test} | "
+
+        match = False
+        for known_issue in known_issues_patterns:
+            if fnmatch.fnmatch(test_name, known_issue):
+                match = True
+                break
+        if match:
+            line += f"X | "
+        else:
+            line += f"  | "
+
         line += f"{test_name}"
         if use_line:
             lines.append(line)
@@ -133,8 +180,8 @@ def run():
             table_filename += f'-vs-{file}'
             report += f'file {files.index(file)}: {file}\n'
             headings += f' | file {files.index(file)}'
-    report += f'\n{headings} | test_name\n'
-    report += f'-----------------------\n'
+    report += f'\n{headings} | known-issue | test_name\n'
+    report += f'-------------------------------------------------------\n'
 
     table_filename += '.txt'
     report += f"""
