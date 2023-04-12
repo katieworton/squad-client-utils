@@ -208,8 +208,8 @@ def run():
                         "--debug",
                         "--rerun_name",
                         "-".join(skiptests),
-                        "--tests",
-                    ] + skiptests
+                        "--tests", " ".join(skiptests)
+                    ]
 
                     if args.allow_unfinished:
                         run_args.append("--allow_unfinished")

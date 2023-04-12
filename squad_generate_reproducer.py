@@ -75,7 +75,8 @@ jobs:
             # parameters = re.findall("--(parameters) (\S+)", line)
             # print(parameters)
             timeouts = dict([(test, int(timeout)) for test, timeout in re.findall("--timeouts (\S+)=(\d+)", line)])
-            timeouts["command"] = 5
+            timeouts["commands"] = 5
+            parameters = {"command-name": test_name}
             print(timeouts)
             kernel = re.findall("--kernel (\S+)", line)
             print(kernel)
@@ -90,7 +91,7 @@ jobs:
                 plan["jobs"][0]["tests"] = []
 
 
-            plan["jobs"][0]["tests"].append({"timeouts": timeouts, "kernel": kernel[0], "rootfs": rootfs[0], "modules": modules[0], "device": device[0], "commands": [f'cd /opt/ltp && ./runltp -s {test_name}']})
+            plan["jobs"][0]["tests"].append({"timeouts": timeouts, "parameters": parameters, "kernel": kernel[0], "rootfs": rootfs[0], "modules": modules[0], "device": device[0], "commands": [f'cd /opt/ltp && ./runltp -s {test_name}']})
 
 
             pprint.pprint(plan)
