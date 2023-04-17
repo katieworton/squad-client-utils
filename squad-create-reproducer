@@ -1,0 +1,115 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2023-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+
+import argparse
+import logging
+import os
+import pathlib
+import sys
+
+from squad_client.core.api import SquadApi
+
+import squadutilslib
+
+squad_host_url = "https://qa-reports.linaro.org/"
+SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", squad_host_url))
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def parse_args(raw_args):
+    parser = argparse.ArgumentParser(
+        description="Get the latest TuxRun reproducer for a given group, project, device and suite. The reproducer will be printed to the terminal and written to a file."
+    )
+
+    parser.add_argument(
+        "--device-name",
+        required=True,
+        help="The device name (for example, qemu-arm64).",
+    )
+
+    parser.add_argument(
+        "--group",
+        required=True,
+        help="The name of the SQUAD group.",
+    )
+
+    parser.add_argument(
+        "--project",
+        required=True,
+        help="The name of the SQUAD project.",
+    )
+
+    parser.add_argument(
+        "--suite-name",
+        required=True,
+        help="The suite name to grab a reproducer for.",
+    )
+
+    parser.add_argument(
+        "--build-names",
+        required=False,
+        default=["gcc-12-lkftconfig"],
+        nargs="+",
+        help="The list of accepted build names (for example, gcc-12-lkftconfig). Regex is supported.",
+    )
+
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Display debug messages.",
+    )
+
+    parser.add_argument(
+        "--filename",
+        required=False,
+        default="reproducer",
+        help="Name for the reproducer file, 'reproducer' by default.",
+    )
+
+    parser.add_argument(
+        "--search-build-count",
+        required=False,
+        default=10,
+        type=int,
+        help="The number of builds to fetch when searching for a reproducer.",
+    )
+
+    return parser.parse_args(raw_args)
+
+
+def run(raw_args=None):
+    args = parse_args(raw_args)
+
+    try:
+        tuxrun_reproducer_file = squadutilslib.get_reproducer(
+            args.group,
+            args.project,
+            args.device_name,
+            args.debug,
+            args.build_names,
+            args.suite_name,
+            args.search_build_count,
+            args.filename,
+        )
+        reproducer_txt = pathlib.Path(tuxrun_reproducer_file).read_text(
+            encoding="utf-8"
+        )
+        print(reproducer_txt)
+    except squadutilslib.ReproducerNotFound as e:
+        logger.warning(
+            f"No reproducer could be found for {args.group} {args.project} {args.device_name} {args.build_names}"
+        )
+        logger.warning(f"{e}")
+
+
+if __name__ == "__main__":
+    sys.exit(run())
