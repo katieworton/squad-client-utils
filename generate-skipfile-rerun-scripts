@@ -5,10 +5,11 @@
 import argparse
 import os
 import pathlib
+import pprint
 import sys
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad
-import wget
+import yaml
 import squadutilslib
 
 # example: ./generate_skipfile_rerun_scripts.py --test_type ltp --devices "qemu-armv7" "qemu-arm64" "qemu-i386" "qemu-x86_64"
@@ -69,7 +70,6 @@ def parse_args():
         default=[
             "gcc-12-lkftconfig",
             "gcc-\d\d-lkftconfig",
-            "gcc-\d\d-lkftconfig-64k_page_size",
         ],
         help="A list of regexs that capture the acceptable build names.",
         nargs="+",
@@ -114,7 +114,15 @@ def parse_args():
         help="The location where reproducer scripts and related logs should be stored.",
     )
 
+    parser.add_argument(
+        "--skipfile",
+        default="https://raw.githubusercontent.com/Linaro/test-definitions/master/automated/linux/ltp/skipfile-lkft.yaml",
+        help="The location of the skipfile (URL or local file).",
+    )
+
     return parser.parse_args()
+
+
 
 
 def run():
@@ -124,21 +132,52 @@ def run():
     if os.path.exists(skipgen_file_name):
         os.remove(skipgen_file_name)
     url = "https://gitlab.com/Linaro/lkft/users/katie.worton/skipgen-py/-/raw/main/skipgen.py"
-    wget.download(url)
+    #squadutilslib.get_file(url)
 
-    skipfile_filename = "skipfile-lkft.yaml"
-    # download skipfile
-    if os.path.exists(skipfile_filename):
-        os.remove(skipfile_filename)
+    skipfile_filename = args.skipfile.split("/")[-1]
+    print(skipfile_filename)
 
-    url = f"https://raw.githubusercontent.com/Linaro/test-definitions/master/automated/linux/{args.test_type}/skipfile-lkft.yaml"
-    wget.download(url)
+    url = args.skipfile
+    filename = "skipfile-lkft.yaml" # squadutilslib.get_file(url)
+    print(filename)
 
-    import skipgen
+    skip_dict = {}
 
-    skipfile = pathlib.Path(skipfile_filename).read_text()
+    with open(filename) as f:
+        reasons = yaml.load(f, Loader=yaml.FullLoader)
+    for reason in reasons['skiplist']:
+        if reason['boards'] == 'all' or 'all' in reason['boards']:
+            devices = ['qemu-armv7', 'qemu-arm64', 'qemu-i386', 'qemu-x86_64']
+            if reason['branches'] == 'all' or 'all' in reason['branches']:
+                projects = all_projects
+                #print(projects)
+            else:
+                for branch_name in reason['branches']:
+                    if branch_name in branch_tree_lookup_stable:
+                        project_name = [f"{branch_tree_lookup_stable[branch_name]}-{branch_name}"]
+                        projects += project_name
+                    elif branch_name in branch_tree_lookup_other:
+                        project_name = [f"{branch_name}-{branch_tree_lookup_other[branch_name]}"]
+                        projects += project_name
+                    else:
+                        print(f"WARNING: branch name {branch_name} is not supported by this script. Skipping")
+                        #sys.exit(1)
+            rerun = ''
+            for test in reason['tests']:
+                rerun += f' {test}'
 
-    skips = skipgen.parse_skipfile(skipfile)
+            print("\nRERUN LIST", rerun)
+            skip_dict[rerun] = projects
+
+    pprint.pprint(skip_dict)
+    #sys.exit(1)
+
+
+    # import skipgen
+
+    # skipfile = pathlib.Path(skipfile_filename).read_text()
+
+    # skips = skipgen.parse_skipfile(skipfile)
     SquadApi.configure(url="https://qa-reports.linaro.org/")
 
     group_name = "lkft"
@@ -186,73 +225,35 @@ def run():
             print("ERROR, check environments are valid")
             sys.exit(1)
 
+        suite_name="ltp-syscalls"
+        run_dir=args.run_dir
+
         for device_name in args.devices:
-            for skipreason in skips["skiplist"]:
-                print("Skipreason url", skipreason["url"])
-                # Create a skiplist for each reason in the skiplist
-                single_reason_skiplist = {"skiplist": [skipreason]}
-                for environment in environments_skipfile:
-                    skiptests = skipgen.get_skipfile_contents(
-                        board=device_name
-                        if device_name not in skipfile_device_name_lookup
-                        else skipfile_device_name_lookup[device_name],
-                        branch=branch_name,
-                        environment=environment,
-                        skips=single_reason_skiplist,
-                    )
-                    # don't try rerunning if there are no tests to run for this branch
-                    if not skiptests:
-                        continue
-                    print(skiptests)
-                    # for test_name in skiptests:
-                    print(f"RUN FOR {device_name}")
-                    run_args = (
-                        [
-                            "--run_dir",
-                            args.run_dir,
-                            "--group",
-                            group_name,
-                            "--project",
-                            project_name,
-                            "--device_name",
-                            device_name,
-                            "--build_name",
-                        ]
-                        + (args.build_names)
-                        + [
-                            "--test_type",
-                            args.test_type,
-                            "--retest_list_filename",
-                            args.retest_list_filename,
-                            "--debug",
-                            "--rerun_name",
-                            "-".join(skiptests),
-                            "--tests",
-                            " ".join(skiptests),
-                        ]
-                    )
+            for tests, projects in skip_dict.items():
+                print(f"RUN FOR {device_name}")
+                test_list = tests.split(" ")
+                build, reproducer_dir, testrun = squadutilslib.find_test_run(
+                    group_name,
+                    project_name,
+                    "latest",
+                    device_name,
+                    tests,
+                    "test",
+                    args.debug,
+                    args.build_names,
+                    args.retest_list_filename,
+                    rerun_name="-".join(test_list),
+                    suite_name=suite_name,
+                    test_type="ltp",
+                    run_dir=run_dir,
+                    allow_unfinished=False,
+                )
+                tuxrun = squadutilslib.get_reproducer(run_dir, build, reproducer_dir, testrun)
+                print(tuxrun)
 
-                    if args.allow_unfinished:
-                        run_args.append("--allow_unfinished")
-                    if args.local:
-                        run_args.append("--local")
+                new_command = squadutilslib.create_new_reproducer(tuxrun, suite_name, tests)
+                print(new_command)
 
-                    squadutilslib.generate_reproducer(
-                        group_name,
-                        project_name,
-                        "latest",
-                        device_name,
-                        skiptests,
-                        "test",
-                        args.debug,
-                        args.build_names,
-                        args.retest_list_filename,
-                        rerun_name="-".join(skiptests),
-                        suite_name="ltp-syscalls",
-                        test_type="ltp",
-                        run_dir=args.run_dir,
-                        allow_unfinished=False,
-                    )
     print("Complete!")
 
 

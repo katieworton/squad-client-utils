@@ -12,6 +12,7 @@ import os
 import pathlib
 import pprint
 import re
+import sys
 import requests
 from pathlib import Path
 from requests import HTTPError
@@ -122,7 +123,7 @@ jobs:
 
 
 def create_tuxrun_script(
-    tuxrun,
+    tuxrun_reproducer,
     suite,
     results_file,
     test_name,
@@ -137,7 +138,7 @@ def create_tuxrun_script(
         retest_list = f.read()
         if retest_filename not in retest_list:
             f.write(retest_filename + "\n")
-    for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
+    for line in tuxrun_reproducer.split("\n"):
         if "tuxrun --runtime" in line:
             line = re.sub("--tests \S+ ", "", line)
             line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
@@ -396,7 +397,7 @@ def find_build(
     return build, build_name, testrun
 
 
-def generate_reproducer(
+def find_test_run(
     group,
     project,
     build_version,
@@ -446,9 +447,7 @@ def generate_reproducer(
     testrun_id = None
     environment = base_project.environment(device_name)
 
-    reproducer_regex = f"/([^-]*)/(gcc-.*)/([\d]*).sh"
     build_name = None
-    found_version = None
     reproducer_dir = (
         f"{run_dir}/reproducers/{test_type}/{device_name}/{base_project.slug}/"
     )
@@ -522,39 +521,43 @@ def generate_reproducer(
                 print("There is no way to determine download_url")
                 return -1
             download_url = testrun.metadata.config.replace("config", "")
-        if individual:
-            for test_name in tests:
-                return create_reproducer(
-                    device_name,
-                    test_name,
-                    retest_list_filename,
-                    rerun_name,
-                    suite_name,
-                    test_type,
-                    run_dir,
-                    local,
-                    base_project,
-                    build,
-                    build_name,
-                    reproducer_dir,
-                    testrun,
-                )
-        else:
-            create_reproducer(
-                device_name,
-                " ".join(tests),
-                retest_list_filename,
-                rerun_name,
-                suite_name,
-                test_type,
-                run_dir,
-                local,
-                base_project,
-                build,
-                build_name,
-                reproducer_dir,
-                testrun,
-            )
+
+        return build, reproducer_dir, testrun
+        #sys.exit(1)
+
+        # if individual:
+        #     for test_name in tests:
+        #         return create_reproducer(
+        #             device_name,
+        #             test_name,
+        #             retest_list_filename,
+        #             rerun_name,
+        #             suite_name,
+        #             test_type,
+        #             run_dir,
+        #             local,
+        #             base_project,
+        #             build,
+        #             build_name,
+        #             reproducer_dir,
+        #             testrun,
+        #         )
+        # else:
+        #     create_reproducer(
+        #         device_name,
+        #         " ".join(tests),
+        #         retest_list_filename,
+        #         rerun_name,
+        #         suite_name,
+        #         test_type,
+        #         run_dir,
+        #         local,
+        #         base_project,
+        #         build,
+        #         build_name,
+        #         reproducer_dir,
+        #         testrun,
+        #     )
 
 
 def create_reproducer(
@@ -576,21 +579,8 @@ def create_reproducer(
     reproducer_file = f"{reproducer_dir}/{build_name}/{testrun.id}.sh"
     log_file = f"{run_dir}/log-{test_type}-{test_name}-{device_name}-{build.version}-{testrun.metadata.build_name}.txt"
 
-    try:
-        if not Path(reproducer_dir).exists():
-            tuxrun = get_file(f"{testrun.job_url}/reproducer", reproducer_file)
-        else:
-            print("reusing reproducer", reproducer_file)
-            tuxrun = reproducer_file
-    except HTTPError:
-        print(f"Reproducer not found at {testrun.job_url}!")
-        print("logging issue in .issues.csv")
-        f = Path(run_dir, ".issues.csv").open("a")
-        f.write(
-            f"Reproducer not found for test run,{testrun.url}, {testrun.job_url}, {build.version}, {build.url}\n"
-        )
-        f.close()
-        return 1
+    tuxrun = get_reproducer(run_dir, build, reproducer_dir, testrun, reproducer_file)
+
     if local:
         retest_filename = f"{run_dir}/retest/{test_type}-{rerun_name}.sh"
         retest_file_list = os.path.join(run_dir, retest_list_filename)
@@ -616,6 +606,65 @@ def create_reproducer(
             retest_file_list,
         )
 
+def get_reproducer(run_dir, build, reproducer_dir, testrun, reproducer_file=None):
+    try:
+        if not Path(reproducer_dir).exists():
+            tuxrun = get_file(f"{testrun.job_url}/reproducer", reproducer_file)
+        else:
+            print("reusing reproducer", reproducer_file)
+            tuxrun = reproducer_file
+    except HTTPError:
+        print(f"Reproducer not found at {testrun.job_url}!")
+        print("logging issue in .issues.csv")
+        f = Path(run_dir, ".issues.csv").open("a")
+        f.write(
+            f"Reproducer not found for test run,{testrun.url}, {testrun.job_url}, {build.version}, {build.url}\n"
+        )
+        f.close()
+    return Path(tuxrun).read_text(encoding="utf-8")
+
+def create_new_reproducer(tuxrun_reproducer, suite, test_name):
+    build_cmdline = ""
+    results_file = "results"
+    log_file = "log"
+    retest_filename = "retest"
+    for line in tuxrun_reproducer.split("\n"):
+        if "tuxrun --runtime" in line:
+            line = re.sub("--tests \S+ ", "", line)
+            line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
+            line = re.sub("--parameters SHARD_NUMBER=\S+ ", "", line)
+            line = re.sub("--parameters SKIPFILE=\S+ ", "", line)
+            line = re.sub(f"{suite}=\S+", "--timeouts commands=5", line)
+            build_cmdline = os.path.join(
+                build_cmdline
+                + line.strip()
+                + f' --save-outputs --results {results_file} --log-file -"'
+            ).strip()
+
+    build_cmdline = build_cmdline.replace(
+        '-"', f"{log_file} -- 'cd /opt/ltp && ./runltp -s {test_name}'"
+    )
+
+    if Path(retest_filename).exists():
+        bisect_script_append = f"""
+{build_cmdline}
+"""
+        f = Path(retest_filename).open("a")
+        f.write(bisect_script_append)
+        f.close()
+        print(f"{build_cmdline}")
+        print(f"file appended: {retest_filename}")
+
+    else:
+        bisect_script = f"""#!/bin/bash
+{build_cmdline}
+"""
+        Path(retest_filename).write_text(bisect_script, encoding="utf-8")
+
+        print(f"{bisect_script}")
+        print(f"file created: {retest_filename}")
+
+    return build_cmdline
 
 def create_run_dir(dir_name):
     if not os.path.exists(dir_name):
