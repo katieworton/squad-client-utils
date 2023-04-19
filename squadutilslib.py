@@ -145,7 +145,7 @@ def download_tests(project, build, build_names, envs, suites, output_filename=No
     return testrun
 
 
-def find_build(build_names, build_options, suite_names, envs, project):
+def find_build(build_names, build_options, suite_names, envs, project, allow_unfinished=False):
     """
     Given a list of builds IDs to choose from in a project, find the first one
     that has a match for the build name, suite names and environments
@@ -158,8 +158,9 @@ def find_build(build_names, build_options, suite_names, envs, project):
     # Given a list of builds IDs, find one that contains the suites and that
     # has a matching build name
     for build_option in build_options.values():
-        # only pick builds that are finished
-        if not build_option.finished:
+        # Only pick builds that are finished, unless we specify that unfinished
+        # builds are allowed
+        if not build_option.finished and not allow_unfinished:
             logger.info(f"Skipping {build_option.id} as build is not marked finished")
             continue
         logger.info(f"Checking build {build_option.id}")
@@ -194,7 +195,7 @@ def find_build(build_names, build_options, suite_names, envs, project):
     return build, build_name, testrun
 
 
-def find_reproducer(group, project, device_name, debug, build_names, suite_name):
+def find_reproducer(group, project, device_name, debug, build_names, suite_name, allow_unfinished=False):
     """
     Given a group, project, device and accepted build names, return a
     reproducer for a test run that meets these conditions.
@@ -229,7 +230,9 @@ def find_reproducer(group, project, device_name, debug, build_names, suite_name)
     build_name = None
 
     logger.debug("Find build")
-    build, build_name, testrun = find_build(build_names, build_options, [suite_name], [environment], base_project)
+    build, build_name, testrun = find_build(
+        build_names, build_options, [suite_name], [environment], base_project, allow_unfinished
+    )
     try:
         build = Build(getid(testrun.build))
         build_name = testrun.metadata.build_name
