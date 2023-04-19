@@ -11,6 +11,7 @@ import logging
 import os
 import re
 from pathlib import Path
+from stat import S_IRUSR, S_IWUSR, S_IXUSR
 
 import requests
 from requests import HTTPError
@@ -263,3 +264,44 @@ def find_reproducer(group, project, device_name, debug, build_names, suite_name,
         logger.error(f"Reproducer not found at {testrun.job_url}!")
         raise ReproducerNotFound
     return tuxrun
+
+
+def create_ltp_custom_command(tests):
+    return f"cd /opt/ltp && ./runltp -s {' '.join(tests)}"
+
+
+def create_ltp_tuxrun_reproducer(tuxrun_reproducer, suite, custom_commands):
+    """
+    Given an existing LTP TuxRun reproducer, edit this reproducer to run a list
+    of LTP tests using custom commands
+    """
+    build_cmdline = ""
+    new_reproducer_file = "ltp-reproducer"
+
+    for line in Path(tuxrun_reproducer).read_text(encoding="utf-8").split("\n"):
+        if "tuxrun --runtime" in line:
+            line = re.sub("--tests \S+ ", "", line)
+            line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
+            line = re.sub("--parameters SHARD_NUMBER=\S+ ", "", line)
+            line = re.sub("--parameters SKIPFILE=\S+ ", "", line)
+            line = re.sub(f"{suite}=\S+", "--timeouts commands=5", line)
+            build_cmdline = os.path.join(build_cmdline + line.strip() + ' --save-outputs --log-file -"').strip()
+
+    build_cmdline = build_cmdline.replace('-"', f"- -- '{custom_commands}'")
+    if Path(new_reproducer_file).exists():
+        new_reproducer_to_append = f"""\n{build_cmdline}"""
+        f = Path(new_reproducer_file).open("a")
+        f.write(new_reproducer_to_append)
+        f.close()
+        logger.debug(f"{build_cmdline}")
+        logger.info(f"file appended: {new_reproducer_file}")
+
+    else:
+        reproducer_list = f"""#!/bin/bash\n{build_cmdline}"""
+        Path(new_reproducer_file).write_text(reproducer_list, encoding="utf-8")
+
+        # Make the script executable
+        os.chmod(new_reproducer_file, S_IXUSR | S_IRUSR | S_IWUSR)
+        logger.info(f"file created: {new_reproducer_file}")
+
+    return build_cmdline

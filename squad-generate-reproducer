@@ -10,7 +10,6 @@
 import argparse
 import logging
 import os
-import pathlib
 import sys
 
 from squad_client.core.api import SquadApi
@@ -26,7 +25,16 @@ logger = logging.getLogger(__name__)
 
 def parse_args(raw_args):
     parser = argparse.ArgumentParser(
-        description="Get a TuxRun reproducer for a given group, project, device and suite."
+        description="Fetch an LTP TuxRun reproducer and adapt it to run a list of LTP tests."
+    )
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--project", help="The name of the SQUAD project.")
+    group.add_argument(
+        "--branch",
+        help="The name of the Linux kernel branch. Supported branch names: {0}".format(
+            ", ".join(squadutilslib.supported_branch_names())
+        ),
     )
 
     parser.add_argument(
@@ -36,15 +44,16 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
-        "--project",
-        required=True,
-        help="The name of the SQUAD project.",
-    )
-
-    parser.add_argument(
         "--device-name",
         required=True,
         help="The device name (for example, qemu-arm64).",
+    )
+
+    parser.add_argument(
+        "--tests",
+        required=True,
+        nargs="+",
+        help="The list of tests to run.",
     )
 
     parser.add_argument(
@@ -54,6 +63,7 @@ def parse_args(raw_args):
         nargs="+",
         help="The list of accepted build names (for example, gcc-12-lkftconfig). Regex is supported.",
     )
+
     parser.add_argument(
         "--suite-name",
         required=False,
@@ -69,17 +79,6 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
-        "--update",
-        action="store_true",
-        default=False,
-        help="Update the reproducer after fetching - removes the suite and adds the commands to run.",
-    )
-
-    group = parser.add_mutually_exclusive_group(required="--update" in sys.argv)
-    group.add_argument("--ltp-tests", help="A list of LTP tests to run.", nargs="+")
-    group.add_argument("--custom-command", help="A custom command to add to the reproducer")
-
-    parser.add_argument(
         "--debug",
         action="store_true",
         default=False,
@@ -92,35 +91,40 @@ def parse_args(raw_args):
 def run(raw_args=None):
     args = parse_args(raw_args)
 
+    project = None
+
+    # If a branch name is provided, look up the project name
+    if args.branch:
+        try:
+            project = squadutilslib.look_up_project_by_branch(args.branch)
+        except Exception as e:
+            logger.error(
+                f"{e}\nIf branch exists but is not in the supported list, use --project to specify the project name."
+            )
+            return -1
+    else:
+        project = args.project
+
     try:
         tuxrun_reproducer_file = squadutilslib.find_reproducer(
             args.group,
-            args.project,
+            project,
             args.device_name,
             args.debug,
             args.build_names,
             args.suite_name,
             args.allow_unfinished,
         )
-        reproducer_txt = pathlib.Path(tuxrun_reproducer_file).read_text(encoding="utf-8")
-        print(reproducer_txt)
     except squadutilslib.ReproducerNotFound as e:
         logger.warning(
             f"No reproducer could be found for {args.group} {args.project} {args.device_name} {args.build_names}"
         )
         logger.warning(f"{e}")
         return -1
-    if args.update:
-        if args.ltp_tests:
-            custom_command = squadutilslib.create_ltp_custom_command(tests=args.ltp_tests)
-            reproducer = squadutilslib.create_ltp_tuxrun_reproducer(
-                tuxrun_reproducer_file, args.suite_name, custom_command
-            )
-        else:
-            reproducer = squadutilslib.create_ltp_tuxrun_reproducer(
-                tuxrun_reproducer_file, args.suite_name, args.custom_command
-            )
-        print(reproducer)
+
+    reproducer = squadutilslib.create_ltp_tuxrun_reproducer(tuxrun_reproducer_file, args.suite_name, args.tests)
+
+    print(reproducer)
 
 
 if __name__ == "__main__":
