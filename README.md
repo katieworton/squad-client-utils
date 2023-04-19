@@ -185,15 +185,16 @@ optional arguments:
 ❯ jq '.[] | select(.result>0.0)' results.json | jq --slurp
 ```
 
-### `squad-create-reproducer`: Get a reproducer for a given group, project and device
+### `squad-create-reproducer`: Get a reproducer for a given group, project, device and suite.
 
-This script gets a recent TuxRun reproducer from SQUAD for ltp-syscalls. When a
-reproducer is found, this is saved to a file and written to stdout.
+This script gets a recent TuxRun reproducer from SQUAD for a chosen suite. When
+a reproducer is found, this is saved to a file and written to stdout.
 
 ```
-usage: squad-create-reproducer [-h] --group GROUP --project PROJECT --device-name DEVICE_NAME [--build-names BUILD_NAMES [BUILD_NAMES ...]] [--debug]
+usage: squad-create-reproducer [-h] --group GROUP --project PROJECT --device-name DEVICE_NAME [--build-names BUILD_NAMES [BUILD_NAMES ...]] [--suite-name SUITE_NAME]
+                              [--debug]
 
-Get an ltp-syscalls TuxRun reproducer for a given group, project and device.
+Get a TuxRun reproducer for a given group, project, device and suite.
 
 options:
   -h, --help            show this help message and exit
@@ -203,6 +204,8 @@ options:
                         The device name (for example, qemu-arm64).
   --build-names BUILD_NAMES [BUILD_NAMES ...]
                         The list of accepted build names (for example, gcc-12-lkftconfig). Regex is supported.
+  --suite-name SUITE_NAME
+                        The suite name to grab a reproducer for.
   --debug               Display debug messages.
 ```
 
