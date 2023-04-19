@@ -192,8 +192,8 @@ This script gets a recent TuxRun reproducer from SQUAD for a chosen suite. When
 a reproducer is found, this is saved to a file and written to stdout.
 
 ```
-usage: squad-create-reproducer [-h] --group GROUP --project PROJECT --device-name DEVICE_NAME [--build-names BUILD_NAMES [BUILD_NAMES ...]] [--suite-name SUITE_NAME]
-                              [--debug]
+usage: squad-create-reproducer [-h] --group GROUP --project PROJECT --device-name DEVICE_NAME [--build-names BUILD_NAMES [BUILD_NAMES ...]]
+                              [--suite-name SUITE_NAME] [--allow-unfinished] [--debug]
 
 Get a TuxRun reproducer for a given group, project, device and suite.
 
@@ -207,6 +207,7 @@ options:
                         The list of accepted build names (for example, gcc-12-lkftconfig). Regex is supported.
   --suite-name SUITE_NAME
                         The suite name to grab a reproducer for.
+  --allow-unfinished    Allow fetching of reproducers where the build is marked as unfinished.
   --debug               Display debug messages.
 ```
 
