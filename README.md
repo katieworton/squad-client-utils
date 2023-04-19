@@ -185,6 +185,39 @@ optional arguments:
 ❯ jq '.[] | select(.result>0.0)' results.json | jq --slurp
 ```
 
+### `squad-create-reproducer`: Get a reproducer for a given group, project, device and suite.
+
+This script gets a recent TuxRun reproducer from SQUAD for a chosen suite. When
+a reproducer is found, this is saved to a file and written to stdout.
+
+```
+./squad-create-reproducer --help
+usage: squad-create-reproducer [-h] --device-name DEVICE_NAME --group GROUP --project
+                               PROJECT --suite-name SUITE_NAME
+                               [--build-names BUILD_NAMES [BUILD_NAMES ...]] [--debug]
+                               [--filename FILENAME]
+                               [--search-build-count SEARCH_BUILD_COUNT]
+
+Get the latest TuxRun reproducer for a given group, project, device and suite. The
+reproducer will be printed to the terminal and written to a file.
+
+options:
+  -h, --help            show this help message and exit
+  --device-name DEVICE_NAME
+                        The device name (for example, qemu-arm64).
+  --group GROUP         The name of the SQUAD group.
+  --project PROJECT     The name of the SQUAD project.
+  --suite-name SUITE_NAME
+                        The suite name to grab a reproducer for.
+  --build-names BUILD_NAMES [BUILD_NAMES ...]
+                        The list of accepted build names (for example, gcc-12-lkftconfig).
+                        Regex is supported.
+  --debug               Display debug messages.
+  --filename FILENAME   Name for the reproducer file, 'reproducer' by default.
+  --search-build-count SEARCH_BUILD_COUNT
+                        The number of builds to fetch when searching for a reproducer.
+```
+
 ## Contributing
 
 This (alpha) project is managed on [`github`](https://github.com) at https://github.com/Linaro/squad-client-utils
