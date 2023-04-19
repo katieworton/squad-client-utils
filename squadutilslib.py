@@ -194,12 +194,11 @@ def find_build(build_names, build_options, suite_names, envs, project):
     return build, build_name, testrun
 
 
-def find_reproducer(group, project, device_name, debug, build_names):
+def find_reproducer(group, project, device_name, debug, build_names, suite_name):
     """
     Given a group, project, device and accepted build names, return a
     reproducer for a test run that meets these conditions.
     """
-    suite_name = "ltp-syscalls"
     if debug:
         logger.setLevel(level=logging.DEBUG)
 
@@ -221,7 +220,7 @@ def find_reproducer(group, project, device_name, debug, build_names):
         logger.error(f'There is no suite named "{suite_name}"')
         raise ReproducerNotFound
 
-    # == get a build that contains a run of ltp-syscalls ==
+    # == get a build that contains a run of the specified suite ==
 
     # Get the latest 10 builds in the project so we don't pick something old
     build_options = base_project.builds(count=10, ordering="-id")
