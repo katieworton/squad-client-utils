@@ -193,7 +193,7 @@ a reproducer is found, this is saved to a file and written to stdout.
 ```
 ./squad-create-reproducer --help
 usage: squad-create-reproducer [-h] --device-name DEVICE_NAME --group GROUP --project
-                               PROJECT --suite-name SUITE_NAME
+                               PROJECT --suite-name SUITE_NAME [--allow-unfinished]
                                [--build-names BUILD_NAMES [BUILD_NAMES ...]] [--debug]
                                [--filename FILENAME]
                                [--search-build-count SEARCH_BUILD_COUNT]
@@ -209,6 +209,8 @@ options:
   --project PROJECT     The name of the SQUAD project.
   --suite-name SUITE_NAME
                         The suite name to grab a reproducer for.
+  --allow-unfinished    Allow fetching of reproducers where the build is marked as
+                        unfinished.
   --build-names BUILD_NAMES [BUILD_NAMES ...]
                         The list of accepted build names (for example, gcc-12-lkftconfig).
                         Regex is supported.
