@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def parse_args(raw_args):
     parser = argparse.ArgumentParser(
-        description="Get an ltp-syscalls TuxRun reproducer for a given group, project and device."
+        description="Get a TuxRun reproducer for a given group, project, device and suite."
     )
 
     parser.add_argument(
@@ -54,6 +54,12 @@ def parse_args(raw_args):
         nargs="+",
         help="The list of accepted build names (for example, gcc-12-lkftconfig). Regex is supported.",
     )
+    parser.add_argument(
+        "--suite-name",
+        required=False,
+        default="ltp-syscalls",
+        help="The suite name to grab a reproducer for.",
+    )
 
     parser.add_argument(
         "--debug",
@@ -70,7 +76,7 @@ def run(raw_args=None):
 
     try:
         tuxrun_reproducer_file = squadutilslib.find_reproducer(
-            args.group, args.project, args.device_name, args.debug, args.build_names
+            args.group, args.project, args.device_name, args.debug, args.build_names, args.suite_name
         )
         reproducer_txt = pathlib.Path(tuxrun_reproducer_file).read_text(encoding="utf-8")
         print(reproducer_txt)
