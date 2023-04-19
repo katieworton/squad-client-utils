@@ -62,6 +62,13 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--allow-unfinished",
+        action="store_true",
+        default=False,
+        help="Allow fetching of reproducers where the build is marked as unfinished.",
+    )
+
+    parser.add_argument(
         "--debug",
         action="store_true",
         default=False,
@@ -76,7 +83,13 @@ def run(raw_args=None):
 
     try:
         tuxrun_reproducer_file = squadutilslib.find_reproducer(
-            args.group, args.project, args.device_name, args.debug, args.build_names, args.suite_name
+            args.group,
+            args.project,
+            args.device_name,
+            args.debug,
+            args.build_names,
+            args.suite_name,
+            args.allow_unfinished,
         )
         reproducer_txt = pathlib.Path(tuxrun_reproducer_file).read_text(encoding="utf-8")
         print(reproducer_txt)
