@@ -54,6 +54,13 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--allow-unfinished",
+        action="store_true",
+        default=False,
+        help="Allow fetching of reproducers where the build is marked as unfinished.",
+    )
+
+    parser.add_argument(
         "--build-names",
         required=False,
         default=["gcc-12-lkftconfig"],
@@ -99,6 +106,7 @@ def run(raw_args=None):
             args.suite_name,
             args.search_build_count,
             args.filename,
+            args.allow_unfinished,
         )
         reproducer_txt = pathlib.Path(tuxrun_reproducer_file).read_text(
             encoding="utf-8"

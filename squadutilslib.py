@@ -57,7 +57,13 @@ def get_file(path, filename=None):
 
 
 def find_first_good_testrun(
-    build_names, builds, suite_names, envs, project, output_filename="result.txt"
+    build_names,
+    builds,
+    suite_names,
+    envs,
+    project,
+    allow_unfinished=False,
+    output_filename="result.txt",
 ):
     """
     Given a list of builds IDs to choose from in a project, find the first one
@@ -68,8 +74,9 @@ def find_first_good_testrun(
     # has a matching build name
     for build in builds.values():
         suites = []
-        # only pick builds that are finished
-        if not build.finished:
+        # Only pick builds that are finished, unless we specify that unfinished
+        # builds are allowed
+        if not build.finished and not allow_unfinished:
             logger.info(f"Skipping {build.id} as build is not marked finished")
             continue
         logger.info(f"Checking build {build.id}")
@@ -111,7 +118,15 @@ def find_first_good_testrun(
 
 
 def get_reproducer(
-    group, project, device_name, debug, build_names, suite_name, count, filename
+    group,
+    project,
+    device_name,
+    debug,
+    build_names,
+    suite_name,
+    count,
+    filename,
+    allow_unfinished=False,
 ):
     """
     Given a group, project, device and accepted build names, return a
@@ -145,8 +160,9 @@ def get_reproducer(
     environment = base_project.environment(device_name)
 
     logger.debug("Find build")
+
     testrun = find_first_good_testrun(
-        build_names, builds, [suite_name], [environment], base_project
+        build_names, builds, [suite_name], [environment], base_project, allow_unfinished
     )
 
     # Get the reproducer if a testrun is found
