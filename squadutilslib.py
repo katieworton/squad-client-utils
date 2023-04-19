@@ -182,3 +182,29 @@ def get_reproducer(
         return tuxrun
     else:
         raise ReproducerNotFound
+
+
+def create_custom_reproducer(reproducer, suite, custom_commands, filename="reproducer"):
+    """
+    Given an existing TuxRun reproducer, edit this reproducer to run a given
+    custom command.
+    """
+    build_cmdline = ""
+
+    for line in Path(reproducer).read_text(encoding="utf-8").split("\n"):
+        if "tuxrun --runtime" in line:
+            line = re.sub("--tests \S+ ", "", line)
+            line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
+            line = re.sub("--parameters SHARD_NUMBER=\S+ ", "", line)
+            line = re.sub("--parameters SKIPFILE=\S+ ", "", line)
+            line = re.sub(f"{suite}=\S+", "--timeouts commands=5", line)
+            build_cmdline = os.path.join(
+                build_cmdline + line.strip() + ' --save-outputs --log-file -"'
+            ).strip()
+
+    build_cmdline = build_cmdline.replace('-"', f"- -- '{custom_commands}'")
+
+    reproducer_list = f"""#!/bin/bash\n{build_cmdline}"""
+    Path(filename).write_text(reproducer_list, encoding="utf-8")
+
+    return filename

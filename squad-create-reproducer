@@ -12,6 +12,7 @@ import logging
 import os
 import pathlib
 import sys
+from stat import S_IRUSR, S_IWUSR, S_IXUSR
 
 from squad_client.core.api import SquadApi
 
@@ -70,6 +71,12 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--custom-command",
+        required=False,
+        help="A custom command to add to the reproducer.",
+    )
+
+    parser.add_argument(
         "--debug",
         required=False,
         action="store_true",
@@ -99,7 +106,7 @@ def run(raw_args=None):
     args = parse_args(raw_args)
 
     try:
-        tuxrun_reproducer_file = squadutilslib.get_reproducer(
+        reproducer_file = squadutilslib.get_reproducer(
             args.group,
             args.project,
             args.device_name,
@@ -110,15 +117,25 @@ def run(raw_args=None):
             args.filename,
             args.allow_unfinished,
         )
-        reproducer_txt = pathlib.Path(tuxrun_reproducer_file).read_text(
-            encoding="utf-8"
-        )
-        print(reproducer_txt)
     except squadutilslib.ReproducerNotFound as e:
         logger.warning(
             f"No reproducer could be found for {args.group} {args.project} {args.device_name} {args.build_names}"
         )
         logger.warning(f"{e}")
+        return -1
+
+    if args.custom_command:
+        reproducer_file = squadutilslib.create_custom_reproducer(
+            reproducer_file, args.suite_name, args.custom_command, args.filename
+        )
+
+    reproducer = pathlib.Path(reproducer_file).read_text(encoding="utf-8")
+
+    print(reproducer)
+
+    # Make the script executable
+    os.chmod(reproducer_file, S_IXUSR | S_IRUSR | S_IWUSR)
+    logger.info(f"file created: {reproducer_file}")
 
 
 if __name__ == "__main__":
