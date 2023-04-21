@@ -191,9 +191,14 @@ optional arguments:
 This script gets a recent TuxRun reproducer from SQUAD for a chosen suite. When
 a reproducer is found, this is saved to a file and written to stdout.
 
+The `--update` flag can be provided, along with commands (`--custom-command`)
+or LTP tests (`--ltp-tests`), to update a fetched reproducer to run different
+commands.
+
 ```
 usage: squad-create-reproducer [-h] --group GROUP --project PROJECT --device-name DEVICE_NAME [--build-names BUILD_NAMES [BUILD_NAMES ...]]
-                              [--suite-name SUITE_NAME] [--allow-unfinished] [--debug]
+                               [--suite-name SUITE_NAME] [--allow-unfinished] [--update] [--ltp-tests LTP_TESTS [LTP_TESTS ...] |
+                               --custom-command CUSTOM_COMMAND] [--debug]
 
 Get a TuxRun reproducer for a given group, project, device and suite.
 
@@ -208,6 +213,11 @@ options:
   --suite-name SUITE_NAME
                         The suite name to grab a reproducer for.
   --allow-unfinished    Allow fetching of reproducers where the build is marked as unfinished.
+  --update              Update the reproducer after fetching - removes the suite and adds the commands to run.
+  --ltp-tests LTP_TESTS [LTP_TESTS ...]
+                        A list of LTP tests to run.
+  --custom-command CUSTOM_COMMAND
+                        A custom command to add to the reproducer
   --debug               Display debug messages.
 ```
 
