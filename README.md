@@ -244,7 +244,32 @@ Example
 ```
 ./squad-create-reproducer --group lkft --project linux-stable-rc-linux-6.2.y --device-name qemu-arm64 update --custom-command ls
 ```
+### Creating skipfile reproducers
 
+The `squad-create-skipfile-reproducers` script can be used to create TuxRun or
+TuxPlan reproducers for the LTP skipfile.
+
+```
+usage: squad-create-skipfile-reproducers [-h] --group GROUP [--branches BRANCHES [BRANCHES ...]] [--device-names DEVICE_NAMES [DEVICE_NAMES ...]] [--build-names BUILD_NAMES [BUILD_NAMES ...]] [--suite-name SUITE_NAME] [--allow-unfinished] [--local]
+                                         [--debug]
+
+Produce TuxRun or TuxPlan reproducers for the LTP skipfile.
+
+options:
+  -h, --help            show this help message and exit
+  --group GROUP         The name of the SQUAD group.
+  --branches BRANCHES [BRANCHES ...]
+                        A list of SQUAD branches to be tested.
+  --device-names DEVICE_NAMES [DEVICE_NAMES ...]
+                        The list of device names (for example, qemu-arm64).
+  --build-names BUILD_NAMES [BUILD_NAMES ...]
+                        The list of accepted build names (for example, gcc-12-lkftconfig). Regex is supported.
+  --suite-name SUITE_NAME
+                        The suite name to grab a reproducer for.
+  --allow-unfinished    Allow fetching of reproducers where the build is marked as unfinished.
+  --local               Create a TuxRun reproducer when updating rather than a TuxPlan.
+  --debug               Display debug messages.
+```
 ## Contributing
 
 This (alpha) project is managed on [`github`](https://github.com) at https://github.com/Linaro/squad-client-utils
