@@ -225,6 +225,45 @@ options:
                         The number of builds to fetch when searching for a reproducer.
 ```
 
+### `squad-create-skipfile-reproducers`: Creating skipfile reproducers
+
+The `squad-create-skipfile-reproducers` script can be used to create TuxRun or
+TuxPlan reproducers for the LTP skipfile.
+
+```
+./squad-create-skipfile-reproducers --help
+usage: squad-create-skipfile-reproducers [-h] --group GROUP [--allow-unfinished]
+                                         [--projects PROJECTS [PROJECTS ...]]
+                                         [--build-names BUILD_NAMES [BUILD_NAMES ...]]
+                                         [--debug]
+                                         [--device-names DEVICE_NAMES [DEVICE_NAMES ...]]
+                                         [--local] [--count COUNT]
+                                         [--skipfile-url SKIPFILE_URL]
+                                         [--suite-name SUITE_NAME]
+
+Produce TuxRun or TuxPlan reproducers for the LTP skipfile.
+
+options:
+  -h, --help            show this help message and exit
+  --group GROUP         The name of the SQUAD group.
+  --allow-unfinished    Allow fetching of reproducers where the build is marked as
+                        unfinished.
+  --projects PROJECTS [PROJECTS ...]
+                        A list of SQUAD projects to be tested.
+  --build-names BUILD_NAMES [BUILD_NAMES ...]
+                        The list of accepted build names (for example,
+                        gcc-12-lkftconfig). Regex is supported.
+  --debug               Display debug messages.
+  --device-names DEVICE_NAMES [DEVICE_NAMES ...]
+                        The list of device names (for example, qemu-arm64).
+  --local               Create a TuxRun reproducer when updating rather than a TuxPlan.
+  --count COUNT         The number of builds to fetch when searching for a reproducer.
+  --skipfile-url SKIPFILE_URL
+                        URL of the skipfile to test.
+  --suite-name SUITE_NAME
+                        The suite name to grab a reproducer for.
+```
+
 ## Contributing
 
 This (alpha) project is managed on [`github`](https://github.com) at https://github.com/Linaro/squad-client-utils
