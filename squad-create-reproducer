@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 def parse_args(raw_args):
     parser = argparse.ArgumentParser(
         description="Get a TuxRun reproducer for a given group, project, device and suite."
+        + " Optionally update the TuxRun reproducer to run custom commands and/or run in the cloud with TuxPlan."
     )
 
     parser.add_argument(
@@ -68,14 +69,18 @@ def parse_args(raw_args):
         help="Allow fetching of reproducers where the build is marked as unfinished.",
     )
 
-    parser.add_argument(
-        "--update",
+    subparsers = parser.add_subparsers(
+        dest="update", required=True, help="Update TuxRun reproducers to run custom commands in TuxRun or TuxPlan."
+    )
+    parser_updates = subparsers.add_parser("update")
+    parser_updates.add_argument(
+        "--local",
         action="store_true",
         default=False,
-        help="Update the reproducer after fetching - removes the suite and adds the commands to run.",
+        help="Create a TuxRun reproducer when updating rather than a TuxPlan.",
     )
 
-    group = parser.add_mutually_exclusive_group(required="--update" in sys.argv)
+    group = parser_updates.add_mutually_exclusive_group(required="update" in sys.argv)
     group.add_argument("--ltp-tests", help="A list of LTP tests to run.", nargs="+")
     group.add_argument("--custom-command", help="A custom command to add to the reproducer")
 
@@ -113,13 +118,16 @@ def run(raw_args=None):
     if args.update:
         if args.ltp_tests:
             custom_command = squadutilslib.create_ltp_custom_command(tests=args.ltp_tests)
+        else:
+            custom_command = args.custom_command
+
+        if args.local:
             reproducer = squadutilslib.create_ltp_tuxrun_reproducer(
                 tuxrun_reproducer_file, args.suite_name, custom_command
             )
         else:
-            reproducer = squadutilslib.create_ltp_tuxrun_reproducer(
-                tuxrun_reproducer_file, args.suite_name, args.custom_command
-            )
+            reproducer = squadutilslib.create_ltp_tuxsuite_plan_reproducer(tuxrun_reproducer_file, custom_command)
+
         print(reproducer)
 
 
