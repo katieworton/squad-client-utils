@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 def parse_args(raw_args):
     parser = argparse.ArgumentParser(
-        description="Get the latest TuxRun reproducer for a given group, project, device and suite. The reproducer will be printed to the terminal and written to a file."
+        description="Get the latest TuxRun reproducer for a given group, project, device and suite."
+        + " The reproducer will be printed to the terminal and written to a file."
+        + " Optionally update the TuxRun reproducer to run custom commands and/or run in the cloud with TuxTest."
     )
 
     parser.add_argument(
@@ -92,6 +94,14 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--local",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Create a TuxRun reproducer when updating rather than a TuxTest.",
+    )
+
+    parser.add_argument(
         "--search-build-count",
         required=False,
         default=10,
@@ -116,17 +126,22 @@ def run(raw_args=None):
             args.search_build_count,
             args.filename,
             args.allow_unfinished,
+            args.local,
         )
     except squadutilslib.ReproducerNotFound as e:
-        logger.warning(
+        logger.error(
             f"No reproducer could be found for {args.group} {args.project} {args.device_name} {args.build_names}"
         )
-        logger.warning(f"{e}")
+        logger.error(f"{e}")
         return -1
 
     if args.custom_command:
         reproducer_file = squadutilslib.create_custom_reproducer(
-            reproducer_file, args.suite_name, args.custom_command, args.filename
+            reproducer_file,
+            args.suite_name,
+            args.custom_command,
+            args.local,
+            args.filename,
         )
 
     reproducer = pathlib.Path(reproducer_file).read_text(encoding="utf-8")

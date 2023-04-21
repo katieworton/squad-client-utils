@@ -127,6 +127,7 @@ def get_reproducer(
     count,
     filename,
     allow_unfinished=False,
+    local=False,
 ):
     """
     Given a group, project, device and accepted build names, return a
@@ -175,7 +176,12 @@ def get_reproducer(
         logger.debug(f"Testrun id: {testrun.id}")
 
         try:
-            tuxrun = get_file(f"{testrun.job_url}/reproducer", filename=filename)
+            if local:
+                tuxrun = get_file(f"{testrun.job_url}/reproducer", filename=filename)
+            else:
+                tuxrun = get_file(
+                    f"{testrun.job_url}/tuxsuite_reproducer", filename=filename
+                )
         except HTTPError:
             logger.error(f"Reproducer not found at {testrun.job_url}!")
             raise ReproducerNotFound
@@ -184,25 +190,35 @@ def get_reproducer(
         raise ReproducerNotFound
 
 
-def create_custom_reproducer(reproducer, suite, custom_commands, filename="reproducer"):
+def create_custom_reproducer(
+    reproducer, suite, custom_commands, local=False, filename="reproducer"
+):
     """
-    Given an existing TuxRun reproducer, edit this reproducer to run a given
-    custom command.
+    Given an existing TuxRun or TuxTest reproducer, edit this reproducer to run
+    a given custom command.
     """
     build_cmdline = ""
 
     for line in Path(reproducer).read_text(encoding="utf-8").split("\n"):
-        if "tuxrun --runtime" in line:
+        if ("tuxsuite test submit" in line and not local) or (
+            "tuxrun --runtime" in line and local
+        ):
             line = re.sub("--tests \S+ ", "", line)
             line = re.sub("--parameters SHARD_INDEX=\S+ ", "", line)
             line = re.sub("--parameters SHARD_NUMBER=\S+ ", "", line)
             line = re.sub("--parameters SKIPFILE=\S+ ", "", line)
-            line = re.sub(f"{suite}=\S+", "--timeouts commands=5", line)
-            build_cmdline = os.path.join(
-                build_cmdline + line.strip() + ' --save-outputs --log-file -"'
-            ).strip()
-
-    build_cmdline = build_cmdline.replace('-"', f"- -- '{custom_commands}'")
+            line = re.sub(f"{suite}=\S+", "commands=5", line)
+            if local:
+                build_cmdline = os.path.join(
+                    build_cmdline + line.strip() + ' --save-outputs --log-file -"'
+                ).strip()
+                build_cmdline = build_cmdline.replace('-"', f"- -- '{custom_commands}'")
+            else:
+                build_cmdline = os.path.join(
+                    build_cmdline
+                    + line.strip()
+                    + f''' --commands "'{custom_commands}'"'''
+                ).strip()
 
     reproducer_list = f"""#!/bin/bash\n{build_cmdline}"""
     Path(filename).write_text(reproducer_list, encoding="utf-8")
