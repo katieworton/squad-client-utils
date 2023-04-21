@@ -314,8 +314,8 @@ def create_ltp_tuxsuite_plan_reproducer(tuxrun_reproducer, custom_commands):
     if not os.path.exists(plan_name):
         test_yaml_str = """
 version: 1
-name: full kernel validation for the master branch.
-description: Build and test linux kernel with every toolchain
+name: Test reproducers.
+description: Run tests from customised reproducers.
 jobs:
 - name: test-command
   tests:
@@ -353,6 +353,6 @@ jobs:
     with open(plan_name, "w") as f:
         f.write(plan_txt)
         f.close()
-        print(f"plan file updated: {plan_name}")
+        logger.info(f"plan file updated: {plan_name}")
 
     return plan_txt
