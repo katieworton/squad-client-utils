@@ -191,16 +191,19 @@ optional arguments:
 This script gets a recent TuxRun reproducer from SQUAD for a chosen suite. When
 a reproducer is found, this is saved to a file and written to stdout.
 
-The `--update` flag can be provided, along with commands (`--custom-command`)
-or LTP tests (`--ltp-tests`), to update a fetched reproducer to run different
-commands.
 
 ```
-usage: squad-create-reproducer [-h] --group GROUP --project PROJECT --device-name DEVICE_NAME [--build-names BUILD_NAMES [BUILD_NAMES ...]]
-                               [--suite-name SUITE_NAME] [--allow-unfinished] [--update] [--ltp-tests LTP_TESTS [LTP_TESTS ...] |
-                               --custom-command CUSTOM_COMMAND] [--debug]
+./squad-create-reproducer --help
+usage: squad-create-reproducer [-h] --group GROUP --project PROJECT --device-name DEVICE_NAME
+                               [--build-names BUILD_NAMES [BUILD_NAMES ...]] [--suite-name SUITE_NAME]
+                               [--allow-unfinished] [--debug]
+                               {update} ...
 
-Get a TuxRun reproducer for a given group, project, device and suite.
+Get a TuxRun reproducer for a given group, project, device and suite. Optionally update the TuxRun reproducer to
+run custom commands and/or run in the cloud with TuxPlan.
+
+positional arguments:
+  {update}              Update TuxRun reproducers to run custom commands in TuxRun or TuxPlan.
 
 options:
   -h, --help            show this help message and exit
@@ -213,12 +216,33 @@ options:
   --suite-name SUITE_NAME
                         The suite name to grab a reproducer for.
   --allow-unfinished    Allow fetching of reproducers where the build is marked as unfinished.
-  --update              Update the reproducer after fetching - removes the suite and adds the commands to run.
+  --debug               Display debug messages.
+```
+
+#### Updating reproducers with custom commands
+
+To update a fetched reproducer to run custom commands use `update`, along with
+commands (`--custom-command`) or LTP tests (`--ltp-tests`), to update a fetched
+reproducer to run different commands.
+
+```
+./squad-create-reproducer update --help
+usage: squad-create-reproducer update [-h] [--local]
+                                      (--ltp-tests LTP_TESTS [LTP_TESTS ...] | --custom-command CUSTOM_COMMAND)
+
+options:
+  -h, --help            show this help message and exit
+  --local               Create a TuxRun reproducer when updating rather than a TuxPlan.
   --ltp-tests LTP_TESTS [LTP_TESTS ...]
                         A list of LTP tests to run.
   --custom-command CUSTOM_COMMAND
                         A custom command to add to the reproducer
-  --debug               Display debug messages.
+```
+
+Example
+
+```
+./squad-create-reproducer --group lkft --project linux-stable-rc-linux-6.2.y --device-name qemu-arm64 update --custom-command ls
 ```
 
 ## Contributing
