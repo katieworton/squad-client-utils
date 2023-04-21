@@ -14,6 +14,7 @@ from pathlib import Path
 from stat import S_IRUSR, S_IWUSR, S_IXUSR
 
 import requests
+import yaml
 from requests import HTTPError
 from squad_client.core.models import ALL, Build, Squad
 from squad_client.utils import first, getid
@@ -305,3 +306,53 @@ def create_ltp_tuxrun_reproducer(tuxrun_reproducer, suite, custom_commands):
         logger.info(f"file created: {new_reproducer_file}")
 
     return build_cmdline
+
+
+def create_ltp_tuxsuite_plan_reproducer(tuxrun_reproducer, custom_commands):
+    plan_name = "reproducer_tuxsuite_plan.yaml"
+
+    if not os.path.exists(plan_name):
+        test_yaml_str = """
+version: 1
+name: full kernel validation for the master branch.
+description: Build and test linux kernel with every toolchain
+jobs:
+- name: test-command
+  tests:
+        """
+    else:
+        test_yaml_str = Path(plan_name).read_text(encoding="utf-8")
+
+    plan = yaml.load(test_yaml_str)
+    plan_txt = ""
+    for line in Path(tuxrun_reproducer).read_text(encoding="utf-8").split("\n"):
+        if "tuxrun --runtime" in line:
+            timeouts = dict([(test, int(timeout)) for test, timeout in re.findall("--timeouts (\S+)=(\d+)", line)])
+            timeouts["commands"] = 5
+            parameters = {"command-name": custom_commands}
+            kernel = re.findall("--kernel (\S+)", line)
+            rootfs = re.findall("--rootfs (\S+)", line)
+            modules = re.findall("--modules (\S+)", line)
+            device = re.findall("--device (\S+)", line)
+            if not plan["jobs"][0]["tests"]:
+                plan["jobs"][0]["tests"] = []
+
+            plan["jobs"][0]["tests"].append(
+                {
+                    "timeouts": timeouts,
+                    "parameters": parameters,
+                    "kernel": kernel[0],
+                    "rootfs": rootfs[0],
+                    "modules": modules[0],
+                    "device": device[0],
+                    "commands": [f"{custom_commands}"],
+                }
+            )
+    plan_txt = yaml.dump(plan, sort_keys=False, default_flow_style=False)
+
+    with open(plan_name, "w") as f:
+        f.write(plan_txt)
+        f.close()
+        print(f"plan file updated: {plan_name}")
+
+    return plan_txt
