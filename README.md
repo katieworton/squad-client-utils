@@ -196,11 +196,12 @@ usage: squad-create-reproducer [-h] --device-name DEVICE_NAME --group GROUP --pr
                                PROJECT --suite-name SUITE_NAME [--allow-unfinished]
                                [--build-names BUILD_NAMES [BUILD_NAMES ...]]
                                [--custom-command CUSTOM_COMMAND] [--debug]
-                               [--filename FILENAME]
+                               [--filename FILENAME] [--local]
                                [--search-build-count SEARCH_BUILD_COUNT]
 
 Get the latest TuxRun reproducer for a given group, project, device and suite. The
-reproducer will be printed to the terminal and written to a file.
+reproducer will be printed to the terminal and written to a file. Optionally update the
+TuxRun reproducer to run custom commands and/or run in the cloud with TuxTest.
 
 options:
   -h, --help            show this help message and exit
@@ -219,6 +220,7 @@ options:
                         A custom command to add to the reproducer.
   --debug               Display debug messages.
   --filename FILENAME   Name for the reproducer file, 'reproducer' by default.
+  --local               Create a TuxRun reproducer when updating rather than a TuxTest.
   --search-build-count SEARCH_BUILD_COUNT
                         The number of builds to fetch when searching for a reproducer.
 ```
