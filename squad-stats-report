@@ -373,7 +373,7 @@ def run():
             a.append(d)
 
             print(f"Write builds to JSON file {filename}, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}")
-            Path(filename).write_text(json.dump(a, indent=4), encoding="utf-8")
+            Path(filename).write_text(json.dumps(a, indent=4), encoding="utf-8")
 
             kernel_pushes.append(len(builds))
             kernel_builts.append(number_of_kernel_builts)
