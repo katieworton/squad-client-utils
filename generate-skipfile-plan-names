@@ -1,0 +1,48 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2023-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+
+import sys
+
+linux_stable_rc_branches = {
+    "linux-4.14.y": "linux-stable-rc",
+    "linux-4.19.y": "linux-stable-rc",
+    "linux-5.4.y": "linux-stable-rc",
+    "linux-5.10.y": "linux-stable-rc",
+    "linux-5.15.y": "linux-stable-rc",
+    "linux-6.1.y": "linux-stable-rc",
+    "linux-6.2.y": "linux-stable-rc",
+}
+
+linux_mainline_next_branches = {
+    "linux-mainline": "master",
+    "linux-next": "master",
+}
+
+
+def look_up_project_by_branch(branch_name):
+    if branch_name in linux_stable_rc_branches:
+        return f"{linux_stable_rc_branches[branch_name]}-{branch_name}"
+    elif branch_name in linux_mainline_next_branches:
+        return f"{branch_name}-{linux_mainline_next_branches[branch_name]}"
+    else:
+        raise Exception(
+            "Unknown branch name {0}. \nSupported branch names: \n\t- {1}".format(
+                branch_name, "\n\t- ".join(supported_branch_names())
+            )
+        )
+
+
+def supported_branch_names():
+    return list(linux_stable_rc_branches) + list(linux_mainline_next_branches)
+
+
+if __name__ == "__main__":
+    for project in [look_up_project_by_branch(branch) for branch in supported_branch_names()]:
+        print(f"skipfile-reproducer-{project}-plan.yaml")
+    sys.exit(0)
