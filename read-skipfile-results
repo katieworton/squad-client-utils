@@ -1,0 +1,201 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2023-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+import argparse
+import json
+import logging
+import os
+import pathlib
+import re
+import shutil
+import subprocess
+import sys
+
+from git import Repo
+from ruamel.yaml import YAML
+from squad_client.core.api import SquadApi
+from squad_client.core.models import Environment, Squad, TestRun
+from squad_client.utils import first, getid
+
+from squadutilslib import get_file
+
+
+def parse_args(raw_args):
+    parser = argparse.ArgumentParser(description="Read results and update skipfile")
+
+    parser.add_argument(
+        "--group-name",
+        required=True,
+    )
+    parser.add_argument(
+        "--squad-host",
+        required=False,
+        default="https://qa-reports.linaro.org/",
+    )
+    parser.add_argument(
+        "--project_name",
+        required=False,
+        default="skipfile-testing",
+    )
+
+    parser.add_argument(
+        "--skipfile",
+        required=False,
+        default="test-definitions/automated/linux/ltp/skipfile-lkft.yaml",
+    )
+
+    return parser.parse_args(raw_args)
+
+
+def delete_skiplist_entry(skipfile, url):
+    """
+    Delete an entry from the skiplist (for example, when a bug has been fixed)
+    """
+    skipfile["skiplist"] = [test for test in skipfile["skiplist"] if url != test["url"]]
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def run(raw_args=None):
+    args = parse_args(raw_args)
+    SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", args.squad_host))
+
+    builds = "builds_for_skipfile_runs.txt"
+    group = Squad().group(args.group_name)
+    project = group.project(args.project_name)
+
+    builds_list_file = open(builds, "r")
+    squad_builds = builds_list_file.readlines()
+
+    results_file_name = "results.csv"
+    results_file = open(results_file_name, "w+")
+
+    skipfile_name = args.skipfile
+
+    # clone into test-definitions
+    git_url = "git@github.com:Linaro/test-definitions.git"
+    repo_path = "test-definitions"
+    if pathlib.Path(repo_path).is_dir():
+        shutil.rmtree(pathlib.Path(repo_path))
+
+    repo = Repo.clone_from(git_url, repo_path)
+    # TODO Any hangs will not produce a result - so the results file will contain the results for only non-hanging tests.
+    test_rerun_count = 1
+
+    # Read skipfile
+    skipfile_txt = pathlib.Path(skipfile_name).read_text()
+    yaml = YAML()
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    skipfile = yaml.load(skipfile_txt)
+    # fix formatting and create a commit for it
+    with open(skipfile_name, "w") as output_yaml:
+        yaml.dump(skipfile, output_yaml)
+
+    repo.git.add(u=True)
+    repo.git.commit(
+        "-m",
+        "Updates to formatting\n\nUpdates to formatting for skipfile automated updates",
+    )
+    os.chdir(repo_path)
+    var = subprocess.check_output(["git", "format-patch", "--stdout", "HEAD~1"]).decode(
+        "utf-8"
+    )
+    os.chdir("..")
+    print(f"out:\n{var}")
+
+    for build_name in squad_builds:
+        logger.info(f"SQUAD build name {build_name}")
+        # Get the build metadata
+
+        # TODO - change this to remove the current architecture until there and none left.
+        # TODO - support multiple runs and collate results
+        if build_name != "":
+            build = first(project.builds(version=build_name))
+            tests = build.tests()
+            for test in tests.values():
+                print(test)
+                # We only care about the custom commands not boot
+                if "commands" in test.name:
+                    env = Environment(getid(test.environment))
+                    testrun = TestRun(getid(test.test_run))
+                    get_file(testrun.job_url + "/results")
+                    reproducer = open("results", "r")
+                    # reproducer = open("failing_test.json", "r")
+                    results_json = json.load(reproducer)
+                    try:
+                        # gets the name of the custom command
+                        name = (
+                            results_json["lava"]["commands"]["repository"]["run"][
+                                "steps"
+                            ][0]
+                            .split(" ")[1]
+                            .strip()
+                        )
+                        # Gets the result if the test did not time out
+                        overall_result = results_json["commands"][name]["result"]
+                        # tests
+                        tests = (
+                            results_json["lava"]["commands"]["repository"]["run"][
+                                "steps"
+                            ][0]
+                            .split("cd /opt/ltp && ./runltp -s ")[1]
+                            .strip()
+                        )
+                        print(tests)
+                        tests = re.sub("'", "", tests)
+                        tests = re.sub('"', "", tests).split(" ")
+                        print(tests)
+
+                        # Create pastebin link
+
+                        skipfile["skiplist"] = [
+                            skipitem
+                            for skipitem in skipfile["skiplist"]
+                            if (set(tests).difference(set(skipitem["tests"])))
+                        ]
+
+                        # Produce skipfile update
+                        with open(skipfile_name, "w") as output_yaml:
+                            yaml.dump(skipfile, output_yaml)
+
+                        # make updates and create a commit for it
+                        with open(skipfile_name, "w") as output_yaml:
+                            yaml.dump(skipfile, output_yaml)
+
+                        repo.git.add(u=True)
+                        tests_string = ", ".join(tests)
+                        repo.git.commit(
+                            "-m",
+                            f"Updates to skipfile to remove {tests_string}",
+                        )
+                        os.chdir(repo_path)
+                        var = subprocess.check_output(
+                            ["git", "format-patch", "--stdout", "HEAD~1"]
+                        ).decode("utf-8")
+                        os.chdir("..")
+                        print(f"out:\n{var}")
+
+                    except KeyError:
+                        overall_result = "result not found - investigate"
+
+                    # Get runtime
+                    try:
+                        time = results_json["lava"]["commands"]["duration"]
+                    except KeyError:
+                        time = "time not found"
+                    results_file.write(
+                        f"{test.short_name},{testrun.job_url},{env.slug},{time},{overall_result}\n"
+                    )
+
+                    print(f"Results saved to {results_file_name}")
+
+
+if __name__ == "__main__":
+    sys.exit(run())
