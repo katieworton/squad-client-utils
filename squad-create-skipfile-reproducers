@@ -107,6 +107,13 @@ def parse_args(raw_args):
         nargs="+",
         help="The list of device names (for example, qemu-arm64).",
     )
+    parser.add_argument(
+        "--local",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Create a TuxRun reproducer when updating rather than a TuxPlan.",
+    )
 
     parser.add_argument(
         "--search-build-count",
@@ -197,7 +204,7 @@ def run(raw_args=None):
                     args.search_build_count,
                     tmp_reproducer_filename,
                     args.allow_unfinished,
-                    local=True,
+                    local=args.local,
                 )
             except squadutilslib.ReproducerNotFound:
                 logger.error(
@@ -214,7 +221,7 @@ def run(raw_args=None):
                         tmp_reproducer_filename,
                         args.suite_name,
                         custom_command,
-                        local=True,
+                        local=args.local,
                         filename=tmp_custom_reproducer_filename,
                     )
                     if not pathlib.Path(reproducer_script_name).exists():
@@ -236,6 +243,19 @@ def run(raw_args=None):
             pathlib.Path.unlink(pathlib.Path(tmp_custom_reproducer_filename))
         if pathlib.Path(tmp_reproducer_filename).exists():
             pathlib.Path.unlink(pathlib.Path(tmp_reproducer_filename))
+
+    if not args.local:
+        reproducer_scripts_tuxplan = []
+        # Convert tuxtest reproducers to tuxplans
+        for reproducer_script_name in reproducer_scripts:
+            plan_name = f"{reproducer_script_name}-plan.yaml"
+            reproducer = squadutilslib.create_tuxsuite_plan_from_tuxsuite_tests(
+                reproducer_script_name,
+                plan_name=plan_name,
+            )
+            reproducer_scripts_tuxplan.append(plan_name)
+        pathlib.Path.unlink(pathlib.Path(reproducer_script_name))
+        reproducer_scripts = reproducer_scripts_tuxplan
 
     logger.info(
         "Finished creating skipfile reproducers. Files created: %s",
