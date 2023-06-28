@@ -224,3 +224,8 @@ def create_custom_reproducer(
     Path(filename).write_text(reproducer_list, encoding="utf-8")
 
     return filename
+
+
+def create_ltp_custom_command(tests):
+    return f"cd /opt/ltp && ./runltp -s {' '.join(tests)}"
+
