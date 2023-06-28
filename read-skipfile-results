@@ -83,11 +83,13 @@ def run(raw_args=None):
     git_url = "git@github.com:Linaro/test-definitions.git"
     repo_path = "test-definitions"
     if pathlib.Path(repo_path).is_dir():
-        shutil.rmtree(pathlib.Path(repo_path))
+        repo = Repo(repo_path)
+    else:
+        repo = Repo.clone_from(git_url, repo_path)
 
-    repo = Repo.clone_from(git_url, repo_path)
     # TODO Any hangs will not produce a result - so the results file will contain the results for only non-hanging tests.
     test_rerun_count = 1
+    pass_counts = dict()
 
     # Read skipfile
     skipfile_txt = pathlib.Path(skipfile_name).read_text()
@@ -110,9 +112,10 @@ def run(raw_args=None):
     os.chdir("..")
     print(f"out:\n{var}")
 
+    # Loop through and count the non hangs
     for build_name in squad_builds:
         logger.info(f"SQUAD build name {build_name}")
-        # Get the build metadata
+        # TODO Get the build metadata
 
         # TODO - change this to remove the current architecture until there and none left.
         # TODO - support multiple runs and collate results
@@ -153,7 +156,17 @@ def run(raw_args=None):
                         tests = re.sub('"', "", tests).split(" ")
                         print(tests)
 
-                        # Create pastebin link
+                        # get device type from reproducer
+                        get_file(testrun.job_url + "/reproducer")
+                        reproducer = pathlib.Path("reproducer").read_text(
+                            encoding="utf-8"
+                        )
+                        m = re.findall("--device (\S+)", reproducer)
+                        print(m)
+                        return 0
+                        # pass_counts[][]
+
+                        # TODO Create pastebin link
 
                         skipfile["skiplist"] = [
                             skipitem
@@ -195,6 +208,8 @@ def run(raw_args=None):
                     )
 
                     print(f"Results saved to {results_file_name}")
+
+    # Once counted, loop through results and create commits
 
 
 if __name__ == "__main__":
