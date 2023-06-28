@@ -21,6 +21,7 @@ from squadutilslib import (
     ReproducerNotFound,
     create_custom_reproducer,
     create_ltp_custom_command,
+    create_tuxsuite_plan_from_tuxsuite_tests,
     get_file,
     get_reproducer,
 )
@@ -110,6 +111,13 @@ def parse_args(raw_args):
         action="extend",
         nargs="+",
         help="The list of device names (for example, qemu-arm64).",
+    )
+    parser.add_argument(
+        "--local",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Create a TuxRun reproducer when updating rather than a TuxPlan.",
     )
 
     parser.add_argument(
@@ -202,7 +210,7 @@ def run(raw_args=None):
                     args.count,
                     tmp_custom_reproducer_filename,
                     args.allow_unfinished,
-                    local=True,
+                    local=args.local,
                 )
             except ReproducerNotFound:
                 logger.error(
@@ -218,7 +226,7 @@ def run(raw_args=None):
                         args.suite_name,
                         custom_command,
                         tmp_custom_reproducer_filename,
-                        local=True,
+                        local=args.local,
                     )
                     if not Path(reproducer_script_name).exists():
                         reproducer_scripts.append(reproducer_script_name)
@@ -232,6 +240,19 @@ def run(raw_args=None):
 
         if Path(tmp_custom_reproducer_filename).exists():
             Path.unlink(Path(tmp_custom_reproducer_filename))
+
+    if not args.local:
+        reproducer_scripts_tuxplan = []
+        # Convert tuxtest reproducers to tuxplans
+        for reproducer_script_name in reproducer_scripts:
+            plan_name = f"{reproducer_script_name}-plan.yaml"
+            reproducer = create_tuxsuite_plan_from_tuxsuite_tests(
+                reproducer_script_name,
+                plan_name=plan_name,
+            )
+            reproducer_scripts_tuxplan.append(plan_name)
+            Path.unlink(Path(reproducer_script_name))
+        reproducer_scripts = reproducer_scripts_tuxplan
 
     logger.info(
         "Finished creating skipfile reproducers. Files created: %s",

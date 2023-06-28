@@ -10,12 +10,13 @@
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import path, remove
 from pathlib import Path
-from re import match, search, sub
+from re import findall, match, search, sub
 
 from requests import HTTPError, get
 from squad_client.core.models import Squad, TestRun
 from squad_client.shortcuts import download_tests
 from squad_client.utils import first
+from yaml import FullLoader, dump, load
 
 basicConfig(level=INFO)
 logger = getLogger(__name__)
@@ -227,3 +228,67 @@ def create_custom_reproducer(reproducer, suite, custom_commands, filename, local
 
 def create_ltp_custom_command(tests):
     return f"cd /opt/ltp && ./runltp -s {' '.join(tests)}"
+
+
+def tuxtest_to_tuxplan_entry(tuxsuite_test):
+    tuxsuite_test = sub("tuxsuite test submit", "", tuxsuite_test)
+    split_params = tuxsuite_test.split(" --")
+
+    dict_entry = dict()
+    for item in split_params:
+        params_list = findall(r"""(\S+) (.+)""", item)
+        for params in params_list:
+            key, value = params
+            # Change dashes '-' to underscores '_' in key as TuxPlans use underscores in
+            # parameter names rather than dashes.
+            key = sub(r"-", r"_", key)
+            if key == "timeouts":
+                test, timeout = value.split("=")
+                if key in dict_entry:
+                    dict_entry[key][test] = int(timeout)
+                else:
+                    dict_entry[key] = dict()
+                    dict_entry[key][test] = int(timeout)
+            elif key in dict_entry:
+                if not isinstance(dict_entry[key], list):
+                    dict_entry[key] = [dict_entry[key]]
+                dict_entry[key].append(value)
+            elif key == "commands":
+                value = sub(r"""['"]+""", r"", value)
+                dict_entry[key] = [value]
+                dict_entry["command_name"] = value
+            elif key == "overlay":
+                dict_entry[key] = [value]
+            else:
+                dict_entry[key] = value
+
+    return dict_entry
+
+
+def create_tuxsuite_plan_from_tuxsuite_tests(tuxtest_filename, plan_name):
+    tuxtest_list = open(tuxtest_filename).read().splitlines()
+    tuxplan_entries = []
+    for tuxtest in tuxtest_list:
+        # Check the line contains a tuxsuite test command
+        if "tuxsuite test" in tuxtest:
+            entry = tuxtest_to_tuxplan_entry(tuxtest)
+            tuxplan_entries.append(entry)
+
+    test_yaml_str = f"""
+version: 1
+name: {plan_name}
+description: Run tests from customised reproducers.
+jobs:
+- name: test-command
+"""
+    plan = load(test_yaml_str, Loader=FullLoader)
+    plan["jobs"][0]["tests"] = tuxplan_entries
+
+    plan_txt = dump(plan, sort_keys=False, default_flow_style=False)
+
+    with open(plan_name, "w") as f:
+        f.write(plan_txt)
+        f.close()
+        print(f"plan file updated: {plan_name}")
+
+    return plan_txt
