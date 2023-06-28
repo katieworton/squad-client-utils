@@ -1,0 +1,244 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2023-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+from argparse import ArgumentParser
+from logging import INFO, basicConfig, getLogger
+from os import getenv
+from pathlib import Path
+from re import findall, match
+from sys import exit
+from time import time
+
+from squad_client.core.api import SquadApi
+from yaml import FullLoader, load
+
+from squadutilslib import (
+    ReproducerNotFound,
+    create_custom_reproducer,
+    create_ltp_custom_command,
+    get_file,
+    get_reproducer,
+)
+
+squad_host_url = "https://qa-reports.linaro.org/"
+SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", squad_host_url))
+
+basicConfig(level=INFO)
+logger = getLogger(__name__)
+
+project_list = [
+    "linux-mainline-master",
+    "linux-next-master",
+    "linux-stable-rc-linux-4.14.y",
+    "linux-stable-rc-linux-4.19.y",
+    "linux-stable-rc-linux-5.4.y",
+    "linux-stable-rc-linux-5.10.y",
+    "linux-stable-rc-linux-5.15.y",
+    "linux-stable-rc-linux-6.1.y",
+    "linux-stable-rc-linux-6.4.y",
+]
+
+
+def get_branch_from_project(project):
+    # regex for mainline/next
+    branch = match("linux-(.+)", project)
+    # regex for rc
+    if not branch:
+        branch = match("linux-stable-rc-(.+)", project)
+    return branch[0]
+
+
+def get_project_from_branch(branch):
+    projects = [project for project in project_list if str(branch) in project]
+    if projects:
+        return projects[0]
+    else:
+        return None
+
+
+def parse_args(raw_args):
+    parser = ArgumentParser(
+        description="Produce TuxRun or TuxPlan reproducers for the LTP skipfile."
+    )
+
+    parser.add_argument(
+        "--group",
+        required=True,
+        help="The name of the SQUAD group.",
+    )
+
+    parser.add_argument(
+        "--allow-unfinished",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Allow fetching of reproducers where the build is marked as unfinished.",
+    )
+
+    parser.add_argument(
+        "--projects",
+        required=False,
+        action="extend",
+        nargs="+",
+        help="A list of SQUAD projects to be tested.",
+    )
+
+    parser.add_argument(
+        "--build-names",
+        required=False,
+        action="extend",
+        nargs="+",
+        help="The list of accepted build names (for example, gcc-12-lkftconfig). Regex is supported.",
+    )
+
+    parser.add_argument(
+        "--debug",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Display debug messages.",
+    )
+
+    parser.add_argument(
+        "--device-names",
+        required=False,
+        action="extend",
+        nargs="+",
+        help="The list of device names (for example, qemu-arm64).",
+    )
+
+    parser.add_argument(
+        "--count",
+        required=False,
+        default=10,
+        type=int,
+        help="The number of builds to fetch when searching for a reproducer.",
+    )
+
+    parser.add_argument(
+        "--skipfile-url",
+        required=False,
+        default="https://raw.githubusercontent.com/Linaro/test-definitions/master/automated/linux/ltp/skipfile-lkft.yaml",
+        help="URL of the skipfile to test.",
+    )
+
+    parser.add_argument(
+        "--suite-name",
+        required=False,
+        default="ltp-syscalls",
+        help="The suite name to grab a reproducer for.",
+    )
+
+    return parser.parse_args(raw_args)
+
+
+def run(raw_args=None):
+    start = time()
+    args = parse_args(raw_args)
+
+    if not args.device_names:
+        args.device_names = ["qemu-armv7", "qemu-arm64", "qemu-i386", "qemu-x86_64"]
+    if not args.projects:
+        args.projects = project_list
+    if not args.build_names:
+        args.build_names = ["gcc-12-lkftconfig", "gcc-\d\d-lkftconfig"]
+
+    skipfile = get_file(args.skipfile_url)
+
+    reason_list = []
+    reproducer_scripts = []
+
+    with open(skipfile) as f:
+        reasons = load(f, Loader=FullLoader)
+    for reason in reasons["skiplist"]:
+        # If 'boards' is set to 'all' or at least one board for the skipfile entry
+        # is in the list of devices we want to test
+        if (
+            reason["boards"] == args.device_names
+            or reason["boards"] == "all"
+            or (set(args.device_names) & set(reason["boards"]))
+            or "all" in reason["boards"]
+        ):
+            if reason["branches"] == "all" or "all" in reason["branches"]:
+                projects = args.projects
+            else:
+                projects = [
+                    get_project_from_branch(branch)
+                    for branch in reason["branches"]
+                    if branch in reason["branches"]
+                ]
+
+            # Create a cleaned version of the skipfile reason that is easier to
+            # work with
+            cleaned_reason = {}
+            if isinstance(reason["tests"], list):
+                cleaned_reason["tests"] = reason["tests"]
+            else:
+                cleaned_reason["tests"] = [reason["tests"]]
+
+            cleaned_reason["projects"] = projects
+
+            reason_list.append(cleaned_reason)
+
+    for project in [get_project_from_branch(project) for project in args.projects]:
+        reproducer_script_name = f"skipfile-reproducer-{args.group}-{project}"
+        if Path(reproducer_script_name).exists():
+            Path.unlink(Path(reproducer_script_name))
+        tmp_custom_reproducer_filename = reproducer_script_name + "_tmp_reproducer"
+        for device in args.device_names:
+            try:
+                fetched_reproducer = get_reproducer(
+                    args.group,
+                    project,
+                    device,
+                    args.debug,
+                    args.build_names,
+                    args.suite_name,
+                    args.count,
+                    tmp_custom_reproducer_filename,
+                    args.allow_unfinished,
+                    local=True,
+                )
+            except ReproducerNotFound:
+                logger.error(
+                    f"No reproducer could be found for {args.group} {project} {device} {args.build_names}"
+                )
+                return -1
+
+            for reason in reason_list:
+                if project in reason["projects"]:
+                    custom_command = create_ltp_custom_command(tests=reason["tests"])
+                    reproducer = create_custom_reproducer(
+                        fetched_reproducer,
+                        args.suite_name,
+                        custom_command,
+                        tmp_custom_reproducer_filename,
+                        local=True,
+                    )
+                    if not Path(reproducer_script_name).exists():
+                        reproducer_scripts.append(reproducer_script_name)
+                    with open(reproducer_script_name, "a+") as multiple_reproducer_file:
+                        for line in reproducer.split("\n"):
+                            # Don't write back the #!/bin/bash part of reproducer
+                            if "#!/bin/bash" != line.strip():
+                                multiple_reproducer_file.write(line + "\n")
+
+                    logger.debug(reproducer)
+
+        if Path(tmp_custom_reproducer_filename).exists():
+            Path.unlink(Path(tmp_custom_reproducer_filename))
+
+    logger.info(
+        "Finished creating skipfile reproducers. Files created: %s",
+        ", ".join(reproducer_scripts),
+    )
+    logger.debug(f"Took {time() - start}s")
+
+
+if __name__ == "__main__":
+    exit(run())
