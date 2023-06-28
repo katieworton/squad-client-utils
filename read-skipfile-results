@@ -7,10 +7,12 @@
 # SPDX-License-Identifier: MIT
 
 import argparse
+import copy
 import json
 import logging
 import os
 import pathlib
+import pprint
 import re
 import shutil
 import subprocess
@@ -23,6 +25,20 @@ from squad_client.core.models import Environment, Squad, TestRun
 from squad_client.utils import first, getid
 
 from squadutilslib import get_file
+
+# TODO - change this to a generated list
+all_boards = [
+    "qemu-arm64",
+    "qemu_arm64",
+    "qemu-armv7",
+    "qemu_arm",
+    "qemu-x86",
+    "qemu_x86",
+    "qemu-i386",
+    "qemu_i386",
+    "i386",
+    "juno-r2",
+]
 
 
 def parse_args(raw_args):
@@ -78,16 +94,17 @@ def run(raw_args=None):
     results_file = open(results_file_name, "w+")
 
     skipfile_name = args.skipfile
+    commit_dir = "skipfile_update_commits"
+    os.mkdir(commit_dir)
 
     # clone into test-definitions
-    git_url = "git@github.com:Linaro/test-definitions.git"
     repo_path = "test-definitions"
-    if pathlib.Path(repo_path).is_dir():
-        shutil.rmtree(pathlib.Path(repo_path))
+    repo = Repo(repo_path)
 
-    repo = Repo.clone_from(git_url, repo_path)
     # TODO Any hangs will not produce a result - so the results file will contain the results for only non-hanging tests.
     test_rerun_count = 1
+    pass_counts = dict()
+    patch_count = 0
 
     # Read skipfile
     skipfile_txt = pathlib.Path(skipfile_name).read_text()
@@ -99,20 +116,28 @@ def run(raw_args=None):
         yaml.dump(skipfile, output_yaml)
 
     repo.git.add(u=True)
-    repo.git.commit(
-        "-m",
-        "Updates to formatting\n\nUpdates to formatting for skipfile automated updates",
-    )
-    os.chdir(repo_path)
-    var = subprocess.check_output(["git", "format-patch", "--stdout", "HEAD~1"]).decode(
-        "utf-8"
-    )
-    os.chdir("..")
-    print(f"out:\n{var}")
+    if repo.index.diff("HEAD"):
+        repo.git.commit(
+            "-m",
+            "Updates to formatting\n\nUpdates to formatting for skipfile automated updates.",
+        )
+        os.chdir(repo_path)
+        var = subprocess.check_output(
+            ["git", "format-patch", "--stdout", "HEAD~1"]
+        ).decode("utf-8")
+        os.chdir("..")
+        print(f"\n{var}")
+        with open(
+            f"{commit_dir}/update_0000_reformat_skipfile.diff",
+            "w",
+        ) as f:
+            f.write(f"{var}")
+            patch_count += 1
 
+    # Loop through and count the non hangs
     for build_name in squad_builds:
         logger.info(f"SQUAD build name {build_name}")
-        # Get the build metadata
+        # TODO Get the build metadata
 
         # TODO - change this to remove the current architecture until there and none left.
         # TODO - support multiple runs and collate results
@@ -120,7 +145,6 @@ def run(raw_args=None):
             build = first(project.builds(version=build_name))
             tests = build.tests()
             for test in tests.values():
-                print(test)
                 # We only care about the custom commands not boot
                 if "commands" in test.name:
                     env = Environment(getid(test.environment))
@@ -148,39 +172,28 @@ def run(raw_args=None):
                             .split("cd /opt/ltp && ./runltp -s ")[1]
                             .strip()
                         )
-                        print(tests)
                         tests = re.sub("'", "", tests)
                         tests = re.sub('"', "", tests).split(" ")
-                        print(tests)
 
-                        # Create pastebin link
-
-                        skipfile["skiplist"] = [
-                            skipitem
-                            for skipitem in skipfile["skiplist"]
-                            if (set(tests).difference(set(skipitem["tests"])))
-                        ]
-
-                        # Produce skipfile update
-                        with open(skipfile_name, "w") as output_yaml:
-                            yaml.dump(skipfile, output_yaml)
-
-                        # make updates and create a commit for it
-                        with open(skipfile_name, "w") as output_yaml:
-                            yaml.dump(skipfile, output_yaml)
-
-                        repo.git.add(u=True)
-                        tests_string = ", ".join(tests)
-                        repo.git.commit(
-                            "-m",
-                            f"Updates to skipfile to remove {tests_string}",
+                        # get device type from reproducer
+                        get_file(testrun.job_url + "/reproducer")
+                        reproducer = pathlib.Path("reproducer").read_text(
+                            encoding="utf-8"
                         )
-                        os.chdir(repo_path)
-                        var = subprocess.check_output(
-                            ["git", "format-patch", "--stdout", "HEAD~1"]
-                        ).decode("utf-8")
-                        os.chdir("..")
-                        print(f"out:\n{var}")
+                        device = re.findall("--device (\S+)", reproducer)[0]
+                        tests_string = ",".join(sorted(tests))
+                        if tests_string in pass_counts:
+                            if device in pass_counts[tests_string]["count"]:
+                                pass_counts[tests_string]["count"][device] += 1
+                            else:
+                                pass_counts[tests_string][device] = dict()
+                                pass_counts[tests_string]["count"][device] = 1
+                                pass_counts[tests_string]["test_list"] = tests
+                        else:
+                            pass_counts[tests_string] = dict()
+                            pass_counts[tests_string]["count"] = dict()
+                            pass_counts[tests_string]["count"][device] = 1
+                            pass_counts[tests_string]["test_list"] = tests
 
                     except KeyError:
                         overall_result = "result not found - investigate"
@@ -195,6 +208,72 @@ def run(raw_args=None):
                     )
 
                     print(f"Results saved to {results_file_name}")
+    # Once counted, loop through results and create commits
+    tests = ""
+    update = False
+    for test_name in pass_counts:
+        # TODO add branches
+        for device in pass_counts[test_name]["count"]:
+            if pass_counts[test_name]["count"][device] == test_rerun_count:
+                new_skiplist = []
+                for skipitem in skipfile["skiplist"]:
+                    # search for test to remove
+                    tests = pass_counts[test_name]["test_list"]
+                    if set(tests).difference(set(skipitem["tests"])):
+                        new_skiplist.append(skipitem)
+                    else:
+                        # remove device
+
+                        new_skipitem = copy.deepcopy(skipitem)
+                        if new_skipitem["boards"] == "all":
+                            new_skipitem["boards"] = ["all"]
+
+                        if isinstance(new_skipitem["boards"], list):
+                            if "all" in new_skipitem["boards"]:
+                                new_skipitem["boards"] = copy.deepcopy(all_boards)
+                                if device in new_skipitem["boards"]:
+                                    new_skipitem["boards"].remove(device)
+                                    update = True
+                            else:
+                                if device in new_skipitem["boards"]:
+                                    new_skipitem["boards"].remove(device)
+                                    update = True
+                            new_skiplist.append(new_skipitem)
+
+                if update:
+                    skipfile["skiplist"] = new_skiplist
+
+                    # if there are changes, update skipfile
+                    # Produce skipfile update
+                    with open(skipfile_name, "w") as output_yaml:
+                        yaml.dump(skipfile, output_yaml)
+
+                    # make updates and create a commit for it
+                    with open(skipfile_name, "w") as output_yaml:
+                        yaml.dump(skipfile, output_yaml)
+
+                    repo.git.add(u=True)
+                    tests_string = ", ".join(tests)
+                    repo.git.commit(
+                        "-m",
+                        f"Updates to skipfile to remove {tests_string}",
+                    )
+                    os.chdir(repo_path)
+                    var = subprocess.check_output(
+                        ["git", "format-patch", "--stdout", "HEAD~1"]
+                    ).decode("utf-8")
+                    os.chdir("..")
+                    print(f"\n{var}")
+                    with open(
+                        f"{commit_dir}/update_{patch_count:04}_{test_name}_{device}.diff",
+                        "w",
+                    ) as f:
+                        f.write(f"{var}")
+                    patch_count += 1
+                    update = False
+
+    # TODO Create pastebin link
+    return 0
 
 
 if __name__ == "__main__":

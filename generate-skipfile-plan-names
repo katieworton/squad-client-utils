@@ -43,6 +43,8 @@ def supported_branch_names():
 
 
 if __name__ == "__main__":
-    for project in [look_up_project_by_branch(branch) for branch in supported_branch_names()]:
-        print(f"skipfile-reproducer-{project}-plan.yaml")
+    for project in [
+        look_up_project_by_branch(branch) for branch in supported_branch_names()
+    ]:
+        print(f"skipfile-reproducer-lkft-{project}-plan.yaml")
     sys.exit(0)
