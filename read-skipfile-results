@@ -94,15 +94,17 @@ def run(raw_args=None):
     results_file = open(results_file_name, "w+")
 
     skipfile_name = args.skipfile
+    commit_dir = "skipfile_update_commits"
+    os.mkdir(commit_dir)
 
     # clone into test-definitions
-    git_url = "git@github.com:Linaro/test-definitions.git"
     repo_path = "test-definitions"
     repo = Repo(repo_path)
 
     # TODO Any hangs will not produce a result - so the results file will contain the results for only non-hanging tests.
     test_rerun_count = 1
     pass_counts = dict()
+    patch_count = 0
 
     # Read skipfile
     skipfile_txt = pathlib.Path(skipfile_name).read_text()
@@ -116,15 +118,19 @@ def run(raw_args=None):
     repo.git.add(u=True)
     repo.git.commit(
         "-m",
-        "Updates to formatting\n\nUpdates to formatting for skipfile automated updates",
+        "Updates to formatting\n\nUpdates to formatting for skipfile automated updates.",
     )
     os.chdir(repo_path)
     var = subprocess.check_output(["git", "format-patch", "--stdout", "HEAD~1"]).decode(
         "utf-8"
     )
     os.chdir("..")
-    print(f"out:\n{var}")
-
+    print(f"\n{var}")
+    with open(
+        "reformat_skipfile.diff",
+        "w",
+    ) as f:
+        f.write(f"{var}")
     # Loop through and count the non hangs
     for build_name in squad_builds:
         logger.info(f"SQUAD build name {build_name}")
@@ -254,7 +260,13 @@ def run(raw_args=None):
                         ["git", "format-patch", "--stdout", "HEAD~1"]
                     ).decode("utf-8")
                     os.chdir("..")
-                    print(f"out:\n{var}")
+                    print(f"\n{var}")
+                    with open(
+                        f"{commit_dir}/update_{patch_count:04}_{test_name}_{device}.diff",
+                        "w",
+                    ) as f:
+                        f.write(f"{var}")
+                    patch_count += 1
                     update = False
 
     # TODO Create pastebin link
