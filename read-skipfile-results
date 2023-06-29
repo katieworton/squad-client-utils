@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import pathlib
+import pprint
 import re
 import shutil
 import subprocess
@@ -123,7 +124,7 @@ def run(raw_args=None):
             build = first(project.builds(version=build_name))
             tests = build.tests()
             for test in tests.values():
-                print(test)
+                print(test.url)
                 # We only care about the custom commands not boot
                 if "commands" in test.name:
                     env = Environment(getid(test.environment))
@@ -151,49 +152,30 @@ def run(raw_args=None):
                             .split("cd /opt/ltp && ./runltp -s ")[1]
                             .strip()
                         )
-                        print(tests)
                         tests = re.sub("'", "", tests)
                         tests = re.sub('"', "", tests).split(" ")
-                        print(tests)
 
                         # get device type from reproducer
                         get_file(testrun.job_url + "/reproducer")
                         reproducer = pathlib.Path("reproducer").read_text(
                             encoding="utf-8"
                         )
-                        m = re.findall("--device (\S+)", reproducer)
-                        print(m)
-                        return 0
-                        # pass_counts[][]
+                        device = re.findall("--device (\S+)", reproducer)[0]
+                        tests_string = ",".join(sorted(tests))
+                        if tests_string in pass_counts:
+                            if device in pass_counts[tests_string]["count"]:
+                                pass_counts[tests_string]["count"][device] += 1
+                            else:
+                                pass_counts[tests_string][device] = dict()
+                                pass_counts[tests_string]["count"][device] = 1
+                                pass_counts[tests_string]["test_list"] = tests
+                        else:
+                            pass_counts[tests_string] = dict()
+                            pass_counts[tests_string]["count"] = dict()
+                            pass_counts[tests_string]["count"][device] = 1
+                            pass_counts[tests_string]["test_list"] = tests
 
-                        # TODO Create pastebin link
-
-                        skipfile["skiplist"] = [
-                            skipitem
-                            for skipitem in skipfile["skiplist"]
-                            if (set(tests).difference(set(skipitem["tests"])))
-                        ]
-
-                        # Produce skipfile update
-                        with open(skipfile_name, "w") as output_yaml:
-                            yaml.dump(skipfile, output_yaml)
-
-                        # make updates and create a commit for it
-                        with open(skipfile_name, "w") as output_yaml:
-                            yaml.dump(skipfile, output_yaml)
-
-                        repo.git.add(u=True)
-                        tests_string = ", ".join(tests)
-                        repo.git.commit(
-                            "-m",
-                            f"Updates to skipfile to remove {tests_string}",
-                        )
-                        os.chdir(repo_path)
-                        var = subprocess.check_output(
-                            ["git", "format-patch", "--stdout", "HEAD~1"]
-                        ).decode("utf-8")
-                        os.chdir("..")
-                        print(f"out:\n{var}")
+                        print(pass_counts)
 
                     except KeyError:
                         overall_result = "result not found - investigate"
@@ -208,8 +190,43 @@ def run(raw_args=None):
                     )
 
                     print(f"Results saved to {results_file_name}")
-
+    pprint.pprint(pass_counts)
     # Once counted, loop through results and create commits
+    for test_list in pass_counts:
+        # TODO add branches
+        print(f"Architectures for {test_list} that can be removed")
+        for device in pass_counts[test_list]["count"]:
+            if pass_counts[test_list]["count"][device] == test_rerun_count:
+                print(list(pass_counts[test_list]["count"].keys())[0])
+
+    # TODO Create pastebin link
+    return 0
+    skipfile["skiplist"] = [
+        skipitem
+        for skipitem in skipfile["skiplist"]
+        if (set(tests).difference(set(skipitem["tests"])))
+    ]
+
+    # Produce skipfile update
+    with open(skipfile_name, "w") as output_yaml:
+        yaml.dump(skipfile, output_yaml)
+
+    # make updates and create a commit for it
+    with open(skipfile_name, "w") as output_yaml:
+        yaml.dump(skipfile, output_yaml)
+
+    repo.git.add(u=True)
+    tests_string = ", ".join(tests)
+    repo.git.commit(
+        "-m",
+        f"Updates to skipfile to remove {tests_string}",
+    )
+    os.chdir(repo_path)
+    var = subprocess.check_output(["git", "format-patch", "--stdout", "HEAD~1"]).decode(
+        "utf-8"
+    )
+    os.chdir("..")
+    print(f"out:\n{var}")
 
 
 if __name__ == "__main__":
