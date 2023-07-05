@@ -116,7 +116,7 @@ def run(raw_args=None):
     args = parse_args(raw_args)
 
     try:
-        reproducer_file = get_reproducer(
+        reproducer = get_reproducer(
             args.group,
             args.project,
             args.device_name,
@@ -136,21 +136,19 @@ def run(raw_args=None):
         return -1
 
     if args.custom_command:
-        reproducer_file = create_custom_reproducer(
-            reproducer_file,
+        reproducer = create_custom_reproducer(
+            reproducer,
             args.suite_name,
             args.custom_command,
-            args.local,
             args.filename,
+            args.local,
         )
-
-    reproducer = Path(reproducer_file).read_text(encoding="utf-8")
 
     print(reproducer)
 
     # Make the script executable
-    chmod(reproducer_file, S_IXUSR | S_IRUSR | S_IWUSR)
-    logger.info(f"file created: {reproducer_file}")
+    chmod(args.filename, S_IXUSR | S_IRUSR | S_IWUSR)
+    logger.info(f"file created: {args.filename}")
 
 
 if __name__ == "__main__":

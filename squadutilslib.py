@@ -186,21 +186,19 @@ def get_reproducer(
         except HTTPError:
             logger.error(f"Reproducer not found at {testrun.job_url}!")
             raise ReproducerNotFound
-        return reproducer
+        return Path(reproducer).read_text(encoding="utf-8")
     else:
         raise ReproducerNotFound
 
 
-def create_custom_reproducer(
-    reproducer, suite, custom_commands, local=False, filename="reproducer"
-):
+def create_custom_reproducer(reproducer, suite, custom_commands, filename, local=False):
     """
     Given an existing TuxRun or TuxTest reproducer, edit this reproducer to run
     a given custom command.
     """
     build_cmdline = ""
 
-    for line in Path(reproducer).read_text(encoding="utf-8").split("\n"):
+    for line in reproducer.split("\n"):
         if ("tuxsuite test submit" in line and not local) or (
             "tuxrun --runtime" in line and local
         ):
@@ -224,4 +222,4 @@ def create_custom_reproducer(
     reproducer_list = f"""#!/bin/bash\n{build_cmdline}"""
     Path(filename).write_text(reproducer_list, encoding="utf-8")
 
-    return filename
+    return Path(filename).read_text(encoding="utf-8")
