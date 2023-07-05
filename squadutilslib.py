@@ -36,7 +36,7 @@ def get_file(path, filename=None):
     downloaded file. If an existing file path is passed in, return the path. If
     a non-existent path is passed in, raise an exception.
     """
-    logger.info(f"Getting file from {path}")
+    logger.debug(f"Getting file from {path}")
     if search(r"https?://", path):
         request = get(path, allow_redirects=True)
         request.raise_for_status()
@@ -76,9 +76,9 @@ def find_first_good_testrun(
         # Only pick builds that are finished, unless we specify that unfinished
         # builds are allowed
         if not build.finished and not allow_unfinished:
-            logger.info(f"Skipping {build.id} as build is not marked finished")
+            logger.debug(f"Skipping {build.id} as build is not marked finished")
             continue
-        logger.info(f"Checking build {build.id}")
+        logger.debug(f"Checking build {build.id}")
         # Create the list of suite IDs from the suite names
         if suite_names:
             for s in suite_names:
@@ -167,7 +167,7 @@ def get_reproducer(
 
     # Get the reproducer if a testrun is found
     if testrun:
-        logger.info(
+        logger.debug(
             f"Found testrun {testrun} with build_name {testrun.metadata.build_name}, url: {testrun.url}"
         )
 
