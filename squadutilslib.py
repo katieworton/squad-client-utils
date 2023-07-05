@@ -177,15 +177,17 @@ def get_reproducer(
 
         try:
             if local:
-                tuxrun = get_file(f"{testrun.job_url}/reproducer", filename=filename)
+                reproducer = get_file(
+                    f"{testrun.job_url}/reproducer", filename=filename
+                )
             else:
-                tuxrun = get_file(
+                reproducer = get_file(
                     f"{testrun.job_url}/tuxsuite_reproducer", filename=filename
                 )
         except HTTPError:
             logger.error(f"Reproducer not found at {testrun.job_url}!")
             raise ReproducerNotFound
-        return tuxrun
+        return reproducer
     else:
         raise ReproducerNotFound
 
