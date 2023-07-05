@@ -8,20 +8,24 @@
 
 
 from argparse import ArgumentParser
+from logging import DEBUG, INFO, basicConfig, getLogger
 from os import getenv
 from sys import exit
 
 from squad_client.core.api import SquadApi
 
-from squadutilslib import get_recent_projects
+from squadutilslib import get_recent_branches
 
 squad_host_url = "https://qa-reports.linaro.org/"
 SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", squad_host_url))
 
+basicConfig(level=INFO)
+logger = getLogger(__name__)
+
 
 def parse_args(raw_args):
     parser = ArgumentParser(
-        description="Get the projects that were pushed to for a SQUAD group over a given period"
+        description="Get the branches that were pushed to for a SQUAD group over a given number of days."
     )
 
     parser.add_argument(
@@ -32,7 +36,8 @@ def parse_args(raw_args):
 
     parser.add_argument(
         "--days",
-        required=True,
+        required=False,
+        default=7,
         type=int,
         help="The number of days to look back.",
     )
@@ -62,14 +67,17 @@ def parse_args(raw_args):
 
 
 def run(raw_args=None):
-    args = parse_args(raw_args=None)
+    args = parse_args(raw_args)
+    if args.debug:
+        logger.setLevel(level=DEBUG)
 
-    recent_projects = get_recent_projects(
+    recent_projects = get_recent_branches(
         args.group, args.days, args.must_contain, args.must_not_contain, args.debug
     )
-    for project in recent_projects.values():
-        print(f"skipfile-reproducer-lkft-{project}-plan.yaml")
-    return 0
+
+    # Print the branch for each project
+    for branch in recent_projects.values():
+        print(f"{branch}")
 
 
 if __name__ == "__main__":

@@ -7,13 +7,14 @@
 # SPDX-License-Identifier: MIT
 
 
+from datetime import datetime
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import path, remove
 from pathlib import Path
 from re import findall, match, search, sub
 
 from requests import HTTPError, get
-from squad_client.core.models import Squad, TestRun
+from squad_client.core.models import ALL, Build, Project, Squad, TestRun
 from squad_client.shortcuts import download_tests
 from squad_client.utils import first
 from yaml import FullLoader, dump, load
@@ -54,6 +55,63 @@ def get_file(path, filename=None):
         return path
     else:
         raise Exception(f"Path {path} not found")
+
+
+def get_recent_branches(group, days, must_contain, must_not_contain, debug=False):
+    """Returns a dictionary with the project name as key and the git_ref/branch
+    name as the value"""
+    if debug:
+        logger.setLevel(level=DEBUG)
+    recent_branches = {}
+    # Get projects that belong to a group. Note - the `ordering` parameter did
+    # not appear to work here
+    project_ids = Squad().projects(group__slug=group, count=ALL, ordering="-id")
+    for project_id in project_ids:
+        project = Project(project_id)
+        if any(term in project.slug for term in must_contain) and not any(
+            term in project.slug for term in must_not_contain
+        ):
+            latest_builds = Project(project_id).builds(count=10, ordering="-id")
+            latest_build = None
+            for build in latest_builds:
+                if latest_build:
+                    break
+                try:
+                    Build(build).metadata.git_ref
+                    latest_build = Build(build)
+                    logger.debug("Found %s", latest_build.slug)
+                except Exception:
+                    pass
+
+            if latest_build:
+                current_time = datetime.now()
+                last_build_time = datetime.strptime(
+                    latest_build.datetime, "%Y-%m-%dT%H:%M:%S.%fZ"
+                )
+                # Note - this does not currently handle timezones properly but
+                # should be good enough for now
+                diff = current_time - last_build_time
+                try:
+                    if diff.days < days:
+                        recent_branches[
+                            Project(project_id).slug
+                        ] = latest_build.metadata.git_ref
+                        logger.debug(
+                            "Time since the latest build in this project %s %s %s",
+                            diff,
+                            Project(project_id).slug,
+                            latest_build.metadata.git_ref,
+                        )
+                except:
+                    logger.debug(
+                        "No git_ref for %s %s. Finished? %s Last run: %s",
+                        project.slug,
+                        latest_build.url,
+                        latest_build.finished,
+                        diff,
+                    )
+
+    return recent_branches
 
 
 def find_first_good_testrun(
