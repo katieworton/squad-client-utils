@@ -7,26 +7,26 @@
 # SPDX-License-Identifier: MIT
 
 
-import argparse
-import logging
-import os
-import pathlib
-import sys
+from argparse import ArgumentParser
+from logging import INFO, basicConfig, getLogger
+from os import chmod, getenv
+from pathlib import Path
 from stat import S_IRUSR, S_IWUSR, S_IXUSR
+from sys import exit
 
 from squad_client.core.api import SquadApi
 
-import squadutilslib
+from squadutilslib import ReproducerNotFound, create_custom_reproducer, get_reproducer
 
 squad_host_url = "https://qa-reports.linaro.org/"
-SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", squad_host_url))
+SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", squad_host_url))
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+basicConfig(level=INFO)
+logger = getLogger(__name__)
 
 
 def parse_args(raw_args):
-    parser = argparse.ArgumentParser(
+    parser = ArgumentParser(
         description="Get the latest TuxRun reproducer for a given group, project, device and suite."
         + " The reproducer will be printed to the terminal and written to a file."
         + " Optionally update the TuxRun reproducer to run custom commands and/or run in the cloud with TuxTest."
@@ -116,7 +116,7 @@ def run(raw_args=None):
     args = parse_args(raw_args)
 
     try:
-        reproducer_file = squadutilslib.get_reproducer(
+        reproducer_file = get_reproducer(
             args.group,
             args.project,
             args.device_name,
@@ -128,7 +128,7 @@ def run(raw_args=None):
             args.allow_unfinished,
             args.local,
         )
-    except squadutilslib.ReproducerNotFound as e:
+    except ReproducerNotFound as e:
         logger.error(
             f"No reproducer could be found for {args.group} {args.project} {args.device_name} {args.build_names}"
         )
@@ -136,7 +136,7 @@ def run(raw_args=None):
         return -1
 
     if args.custom_command:
-        reproducer_file = squadutilslib.create_custom_reproducer(
+        reproducer_file = create_custom_reproducer(
             reproducer_file,
             args.suite_name,
             args.custom_command,
@@ -144,14 +144,14 @@ def run(raw_args=None):
             args.filename,
         )
 
-    reproducer = pathlib.Path(reproducer_file).read_text(encoding="utf-8")
+    reproducer = Path(reproducer_file).read_text(encoding="utf-8")
 
     print(reproducer)
 
     # Make the script executable
-    os.chmod(reproducer_file, S_IXUSR | S_IRUSR | S_IWUSR)
+    chmod(reproducer_file, S_IXUSR | S_IRUSR | S_IWUSR)
     logger.info(f"file created: {reproducer_file}")
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    exit(run())

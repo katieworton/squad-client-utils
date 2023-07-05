@@ -7,19 +7,18 @@
 # SPDX-License-Identifier: MIT
 
 
-import logging
-import os
-import re
+from logging import DEBUG, INFO, basicConfig, getLogger
+from os import path, remove
 from pathlib import Path
+from re import match, search, sub
 
-import requests
-from requests import HTTPError
+from requests import HTTPError, get
 from squad_client.core.models import Squad, TestRun
 from squad_client.shortcuts import download_tests
 from squad_client.utils import first
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+basicConfig(level=INFO)
+logger = getLogger(__name__)
 
 
 class ReproducerNotFound(Exception):
@@ -38,8 +37,8 @@ def get_file(path, filename=None):
     a non-existent path is passed in, raise an exception.
     """
     logger.info(f"Getting file from {path}")
-    if re.search(r"https?://", path):
-        request = requests.get(path, allow_redirects=True)
+    if search(r"https?://", path):
+        request = get(path, allow_redirects=True)
         request.raise_for_status()
         if not filename:
             filename = path.split("/")[-1]
@@ -50,7 +49,7 @@ def get_file(path, filename=None):
         with open(filename, "wb") as f:
             f.write(request.content)
         return filename
-    elif os.path.exists(path):
+    elif path.exists(path):
         return path
     else:
         raise Exception(f"Path {path} not found")
@@ -85,8 +84,8 @@ def find_first_good_testrun(
             for s in suite_names:
                 suites += project.suites(slug=s).values()
 
-        if os.path.exists(output_filename):
-            os.remove(output_filename)
+        if path.exists(output_filename):
+            remove(output_filename)
 
         # Use download_tests to gather filtered test results (build_name does not
         # currently work as a filter)
@@ -107,7 +106,7 @@ def find_first_good_testrun(
         for line in file_lines:
             build_name, run_id = line.split("/")
             for allowed_build_name in build_names:
-                re_match = re.match(f"^{allowed_build_name}$", build_name)
+                re_match = match(f"^{allowed_build_name}$", build_name)
                 if re_match:
                     # Return a TestRun with a matching build name, project, environment, suite
                     # if it exists
@@ -134,7 +133,7 @@ def get_reproducer(
     reproducer for a test run that meets these conditions.
     """
     if debug:
-        logger.setLevel(level=logging.DEBUG)
+        logger.setLevel(level=DEBUG)
 
     base_group = Squad().group(group)
     if base_group is None:
@@ -205,18 +204,18 @@ def create_custom_reproducer(
         if ("tuxsuite test submit" in line and not local) or (
             "tuxrun --runtime" in line and local
         ):
-            line = re.sub(r"--tests \S+ ", "", line)
-            line = re.sub(r"--parameters SHARD_INDEX=\S+ ", "", line)
-            line = re.sub(r"--parameters SHARD_NUMBER=\S+ ", "", line)
-            line = re.sub(r"--parameters SKIPFILE=\S+ ", "", line)
-            line = re.sub(f"{suite}=\\S+", "commands=5", line)
+            line = sub(r"--tests \S+ ", "", line)
+            line = sub(r"--parameters SHARD_INDEX=\S+ ", "", line)
+            line = sub(r"--parameters SHARD_NUMBER=\S+ ", "", line)
+            line = sub(r"--parameters SKIPFILE=\S+ ", "", line)
+            line = sub(f"{suite}=\\S+", "commands=5", line)
             if local:
-                build_cmdline = os.path.join(
+                build_cmdline = path.join(
                     build_cmdline + line.strip() + ' --save-outputs --log-file -"'
                 ).strip()
                 build_cmdline = build_cmdline.replace('-"', f"- -- '{custom_commands}'")
             else:
-                build_cmdline = os.path.join(
+                build_cmdline = path.join(
                     build_cmdline
                     + line.strip()
                     + f''' --commands "'{custom_commands}'"'''
