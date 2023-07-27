@@ -237,7 +237,9 @@ usage: squad-create-skipfile-reproducers [-h] --group GROUP [--allow-unfinished]
                                          [--build-names BUILD_NAMES [BUILD_NAMES ...]]
                                          [--debug] [--count COUNT]
                                          [--device-names DEVICE_NAMES [DEVICE_NAMES ...]]
-                                         [--local] [--skipfile-url SKIPFILE_URL]
+                                         [--local] [--project-age PROJECT_AGE]
+                                         [--project-regex PROJECT_REGEX]
+                                         [--skipfile-url SKIPFILE_URL]
                                          [--suite-name SUITE_NAME]
 
 Produce TuxRun or TuxPlan reproducers for the LTP skipfile.
@@ -257,6 +259,10 @@ options:
   --device-names DEVICE_NAMES [DEVICE_NAMES ...]
                         The list of device names (for example, qemu-arm64).
   --local               Create a TuxRun reproducer when updating rather than a TuxPlan.
+  --project-age PROJECT_AGE
+                        Project age in days.
+  --project-regex PROJECT_REGEX
+                        Regex pattern for project names.
   --skipfile-url SKIPFILE_URL
                         URL of the skipfile to test.
   --suite-name SUITE_NAME

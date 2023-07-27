@@ -10,7 +10,7 @@ from argparse import ArgumentParser
 from logging import INFO, basicConfig, getLogger
 from os import getenv
 from pathlib import Path
-from re import findall, match
+from re import match
 from sys import exit
 from time import time
 
@@ -23,6 +23,7 @@ from squadutilslib import (
     create_ltp_custom_command,
     create_tuxsuite_plan_from_tuxsuite_tests,
     get_file,
+    get_projects,
     get_reproducer,
 )
 
@@ -31,18 +32,6 @@ SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", squad_host_url))
 
 basicConfig(level=INFO)
 logger = getLogger(__name__)
-
-project_list = [
-    "linux-mainline-master",
-    "linux-next-master",
-    "linux-stable-rc-linux-4.14.y",
-    "linux-stable-rc-linux-4.19.y",
-    "linux-stable-rc-linux-5.4.y",
-    "linux-stable-rc-linux-5.10.y",
-    "linux-stable-rc-linux-5.15.y",
-    "linux-stable-rc-linux-6.1.y",
-    "linux-stable-rc-linux-6.4.y",
-]
 
 
 def get_branch_from_project(project):
@@ -54,7 +43,7 @@ def get_branch_from_project(project):
     return branch[0]
 
 
-def get_project_from_branch(branch):
+def get_project_from_branch(branch, project_list):
     projects = [project for project in project_list if str(branch) in project]
     if projects:
         return projects[0]
@@ -129,6 +118,21 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--project-age",
+        required=False,
+        default=10,
+        type=int,
+        help="Project age in days.",
+    )
+
+    parser.add_argument(
+        "--project-regex",
+        required=False,
+        default="linux-(stable-rc-linux|mainline-master|next-master).*(?<!sanity)$",
+        help="Regex pattern for project names.",
+    )
+
+    parser.add_argument(
         "--skipfile-url",
         required=False,
         default="https://raw.githubusercontent.com/Linaro/test-definitions/master/automated/linux/ltp/skipfile-lkft.yaml",
@@ -149,6 +153,10 @@ def run(raw_args=None):
     start = time()
     args = parse_args(raw_args)
 
+    from datetime import datetime, timedelta
+
+    modtime = datetime.now() - timedelta(days=args.project_age)
+    project_list = get_projects(args.group, args.project_regex, modtime)
     if not args.device_names:
         args.device_names = ["qemu-armv7", "qemu-arm64", "qemu-i386", "qemu-x86_64"]
     if not args.projects:
@@ -176,7 +184,7 @@ def run(raw_args=None):
                 projects = args.projects
             else:
                 projects = [
-                    get_project_from_branch(branch)
+                    get_project_from_branch(branch, project_list)
                     for branch in reason["branches"]
                     if branch in reason["branches"]
                 ]
@@ -193,7 +201,9 @@ def run(raw_args=None):
 
             reason_list.append(cleaned_reason)
 
-    for project in [get_project_from_branch(project) for project in args.projects]:
+    for project in [
+        get_project_from_branch(project, project_list) for project in args.projects
+    ]:
         reproducer_script_name = f"skipfile-reproducer-{args.group}-{project}"
         if Path(reproducer_script_name).exists():
             Path.unlink(Path(reproducer_script_name))
