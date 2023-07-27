@@ -235,10 +235,9 @@ TuxPlan reproducers for the LTP skipfile.
 usage: squad-create-skipfile-reproducers [-h] --group GROUP [--allow-unfinished]
                                          [--projects PROJECTS [PROJECTS ...]]
                                          [--build-names BUILD_NAMES [BUILD_NAMES ...]]
-                                         [--debug]
+                                         [--debug] [--count COUNT]
                                          [--device-names DEVICE_NAMES [DEVICE_NAMES ...]]
-                                         [--local] [--count COUNT]
-                                         [--skipfile-url SKIPFILE_URL]
+                                         [--local] [--skipfile-url SKIPFILE_URL]
                                          [--suite-name SUITE_NAME]
 
 Produce TuxRun or TuxPlan reproducers for the LTP skipfile.
@@ -251,13 +250,13 @@ options:
   --projects PROJECTS [PROJECTS ...]
                         A list of SQUAD projects to be tested.
   --build-names BUILD_NAMES [BUILD_NAMES ...]
-                        The list of accepted build names (for example,
-                        gcc-12-lkftconfig). Regex is supported.
+                        The list of accepted build names (for example, gcc-12-lkftconfig).
+                        Regex is supported.
   --debug               Display debug messages.
+  --count COUNT         The number of builds to fetch when searching for a reproducer.
   --device-names DEVICE_NAMES [DEVICE_NAMES ...]
                         The list of device names (for example, qemu-arm64).
   --local               Create a TuxRun reproducer when updating rather than a TuxPlan.
-  --count COUNT         The number of builds to fetch when searching for a reproducer.
   --skipfile-url SKIPFILE_URL
                         URL of the skipfile to test.
   --suite-name SUITE_NAME

@@ -106,6 +106,14 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--count",
+        required=False,
+        default=10,
+        type=int,
+        help="The number of builds to fetch when searching for a reproducer.",
+    )
+
+    parser.add_argument(
         "--device-names",
         required=False,
         action="extend",
@@ -118,14 +126,6 @@ def parse_args(raw_args):
         action="store_true",
         default=False,
         help="Create a TuxRun reproducer when updating rather than a TuxPlan.",
-    )
-
-    parser.add_argument(
-        "--count",
-        required=False,
-        default=10,
-        type=int,
-        help="The number of builds to fetch when searching for a reproducer.",
     )
 
     parser.add_argument(
