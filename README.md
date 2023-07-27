@@ -2,6 +2,14 @@
 
 Jobs involving [`squad`](https://github.com/Linaro/squad) that are not implemented in [`squad-client`](https://github.com/Linaro/squad-client) or [`squad-report`](https://gitlab.com/Linaro/lkft/reports/squad-report).
 
+## Requirements
+
+To install requirements, from the repo base directory execute:
+
+```
+pip install -r requirements.txt
+```
+
 ## Usage
 
 ### `squad-list-changes`: Get all of the changes for a build, compared to a base build.
