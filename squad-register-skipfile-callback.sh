@@ -25,16 +25,16 @@ callback_url="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${job_id}/play"
 echo "Callback URL: [${callback_url}]"
 
 # Register callback with SQUAD
-#if [ -z "${BUILD_ID}" ]; then
-#    source lib.sh
-#    BUILD_ID="$(get_git_describe build.json)"
-#fi
-#registration_url="${QA_SERVER}/api/builds?version=${BUILD_ID}&project__slug=${SQUAD_PROJECT}"
-#echo "Registration URL: ${registration_url}"
-# curl -f --silent -L "${registration_url}" -o qa_build.json
-# build_id="$(jq -r '.results[0].id' qa_build.json)"
-# curl --silent \
-#     -X POST "${QA_SERVER}/api/builds/${build_id}/callbacks/" \
-#     -H "Authorization: Token ${QA_REPORTS_TOKEN}" \
-#     -F "callback_url=${callback_url}" \
-#     -F "callback_record_response=true"
+if [ -z "${BUILD_ID}" ]; then
+    source lib.sh
+    BUILD_ID="$(get_git_describe build.json)"
+fi
+registration_url="${QA_SERVER}/api/builds?version=${BUILD_ID}&project__slug=${SQUAD_PROJECT}"
+echo "Registration URL: ${registration_url}"
+curl -f --silent -L "${registration_url}" -o qa_build.json
+build_id="$(jq -r '.results[0].id' qa_build.json)"
+curl --silent \
+    -X POST "${QA_SERVER}/api/builds/${build_id}/callbacks/" \
+    -H "Authorization: Token ${QA_REPORTS_TOKEN}" \
+    -F "callback_url=${callback_url}" \
+    -F "callback_record_response=true"
