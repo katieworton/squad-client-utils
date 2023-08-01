@@ -4,6 +4,7 @@ get_git_describe() {
 
     builds_count=$(jq -r '.builds | length' "${build_json}" 2>/dev/null)
 
+    echo "${builds_count}"
     if [ "${builds_count}" -eq 0 ]; then
         retval=$(jq -r '.git_describe' "${build_json}")
     else
