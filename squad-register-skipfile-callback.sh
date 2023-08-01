@@ -24,6 +24,10 @@ callback_url="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${job_id}/play"
 #echo "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${job_id}/play"
 echo "Callback URL: [${callback_url}]"
 
+echo *.yaml-[0-9]*
+
+BUILD_ID=*.yaml-[0-9]*
+
 # Register callback with SQUAD
 if [ -z "${BUILD_ID}" ]; then
     source lib.sh
