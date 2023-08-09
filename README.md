@@ -280,6 +280,69 @@ optional arguments:
                         The suite name to grab a reproducer for.
 ```
 
+### `read-skipfile-results`: Read results from
+
+
+This script can be used to gather the results from skipfile testing and apply
+the relevant updates to the skipfile, optionally pushing these updates to a
+test-definitions repo in github
+
+This script has several requirements for running.
+
+Required files:
+- a copy of the test-definitions repo to be downloaded in the
+  squad-client-utils directory
+- a file containing the list of SQUAD builds containing the skipfile results we
+  want to read (`--builds-file`, which will look for a file called
+  `builds_for_skipfile_runs.txt` by default)
+- a metadata csv file containing the reproducer_script_name, run_project,
+  device and git describe for each SQUAD build on each line
+  (`--metadata-filename`, which will look for a file called `metadata_list.csv`
+  by default)
+
+Other requirements:
+- If pushing the skipfile updates to Github, you must set up a Github access
+  token at `https://github.com/settings/tokens` with access to push commits and
+  pull requests to the test-definitions repo.
+
+  This can be achieved by creating a fine-grained personal access token with
+  the permissions:
+  - Contents: read and write
+  - Metadata: read-only
+  - Pull requests: read and write
+
+
+```
+usage: read-skipfile-results [-h] --group-name GROUP_NAME --project-name PROJECT_NAME
+                             --run-count RUN_COUNT [--builds-file BUILDS_FILE] [--debug]
+                             [--github-token GITHUB_TOKEN] [--github-push]
+                             [--repo-path REPO_PATH]
+                             [--metadata-filename METADATA_FILENAME] [--skipfile SKIPFILE]
+                             [--squad-host SQUAD_HOST]
+
+Read results and update skipfile
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --group-name GROUP_NAME
+  --project-name PROJECT_NAME
+  --run-count RUN_COUNT
+                        The number of runs performed.
+  --builds-file BUILDS_FILE
+                        File containing the list of SQUAD build names
+  --debug               Display debug messages.
+  --github-token GITHUB_TOKEN
+                        The name of the environment variable containing the Github API
+                        token.
+  --github-push         Should the results be pushed to Github.
+  --repo-path REPO_PATH
+                        The path of the test-definitions repo.
+  --metadata-filename METADATA_FILENAME
+                        Name for the file containing the build info.
+  --skipfile SKIPFILE
+  --squad-host SQUAD_HOST
+```
+
 ## Contributing
 
 This (alpha) project is managed on [`github`](https://github.com) at https://github.com/Linaro/squad-client-utils

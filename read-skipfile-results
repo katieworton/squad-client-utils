@@ -1,0 +1,433 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2023-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+from argparse import ArgumentParser
+from copy import deepcopy
+from datetime import datetime
+from logging import DEBUG, INFO, basicConfig, getLogger
+from os import chdir, environ, getenv, path, popen, rename
+from pathlib import Path
+from re import search
+from shutil import copy
+from time import sleep
+
+import pandas as pd
+from git import Repo
+from github import Github
+from ruamel.yaml import YAML
+from squad_client.core.api import SquadApi
+from squad_client.core.models import Environment, Squad
+from squad_client.utils import first, getid
+
+from squadutilslib import generate_command_name_from_list, wait_for_builds
+
+
+def parse_args(raw_args):
+    parser = ArgumentParser(description="Read results and update skipfile")
+
+    parser.add_argument(
+        "--group-name",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--project-name",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--run-count",
+        required=True,
+        type=int,
+        help="The number of runs performed.",
+    )
+
+    parser.add_argument(
+        "--builds-file",
+        required=False,
+        default="builds_for_skipfile_runs.txt",
+        help="File containing the list of SQUAD build names",
+    )
+
+    parser.add_argument(
+        "--debug",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Display debug messages.",
+    )
+
+    parser.add_argument(
+        "--github-token",
+        required=False,
+        default="GITHUB_ACCESS_TOKEN",
+        help="The name of the environment variable containing the Github API token.",
+    )
+
+    parser.add_argument(
+        "--github-push",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Should the results be pushed to Github.",
+    )
+
+    parser.add_argument(
+        "--repo-path",
+        required=False,
+        default="../test-definitions",
+        help="The path of the test-definitions repo.",
+    )
+
+    parser.add_argument(
+        "--metadata-filename",
+        required=False,
+        default="metadata_list.csv",
+        help="Name for the file containing the build info.",
+    )
+
+    parser.add_argument(
+        "--skipfile",
+        required=False,
+        default="automated/linux/ltp/skipfile-lkft.yaml",
+    )
+
+    parser.add_argument(
+        "--squad-host",
+        required=False,
+        default="https://qa-reports.linaro.org/",
+    )
+
+    return parser.parse_args(raw_args)
+
+
+def delete_skiplist_entry(skipfile, url):
+    """
+    Delete an entry from the skiplist (for example, when a bug has been fixed)
+    """
+    skipfile["skiplist"] = [test for test in skipfile["skiplist"] if url != test["url"]]
+
+
+basicConfig(level=INFO)
+logger = getLogger(__name__)
+
+
+def create_commit(repo, summary, message):
+    repo.git.commit(
+        "-sm",
+        f"{summary}\n\n{message}",
+    )
+
+
+def push_pr(token, local_repo, github_repo, summary, message, base, head):
+    remote_url = local_repo.remotes.origin.url
+
+    remote_url_with_token = remote_url.replace("https://github", f"https://{token}@github")
+
+    local_repo.git.push(
+        remote_url_with_token,
+        f"{head}",
+        "-f",
+    )
+    logger.debug(f"Pushed to {head}")
+
+    title = f"[automated] {summary}"
+    body = f"""[automated] {message}"""
+
+    pr = github_repo.create_pull(
+        title=title,
+        body=body,
+        head=head,
+        base=base,
+    )
+    logger.debug(f"PR created {pr}")
+
+
+def run(raw_args=None):
+    args = parse_args(raw_args)
+    SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", args.squad_host))
+
+    if args.debug:
+        logger.setLevel(level=DEBUG)
+
+    # log date
+    date_str = f"{datetime.now():%Y-%m-%d}"
+
+    builds = args.builds_file
+    group = Squad().group(args.group_name)
+    project = group.project(args.project_name)
+    devices = []
+
+    builds_list_file = open(builds, "r")
+    squad_builds = [build_name.strip() for build_name in builds_list_file.readlines()]
+
+    wait_for_builds(project, squad_builds)
+
+    skipfile_name = args.skipfile
+
+    # Set up Github access
+    my_api_key = environ.get(args.github_token)
+    g = Github(my_api_key)
+
+    # Check test-definitions exists
+    if not path.isdir(args.repo_path):
+        logger.error("test-definitions repo not found")
+        exit(1)
+
+    repo = Repo(args.repo_path)
+
+    # Copy metadata file to test-definitions for easier access
+    copy(args.metadata_filename, f"{args.repo_path}/{args.metadata_filename}")
+    chdir(args.repo_path)
+
+    # Any hangs will not produce a result - so the results file will contain
+    # the results for only non-hanging tests.
+    test_rerun_count = args.run_count
+    patch_count = 0
+
+    # Read skipfile
+    skipfile_txt = Path(skipfile_name).read_text()
+    yaml = YAML()
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    skipfile = yaml.load(skipfile_txt)
+
+    cleaned_skiplist = []
+
+    # Remove all_boards if used
+    for skipitem in skipfile["skiplist"]:
+        new_skipitem = deepcopy(skipitem)
+        cleaned_skiplist.append(new_skipitem)
+
+    skipfile["skiplist"] = cleaned_skiplist
+
+    # fix formatting and create a commit for it
+    with open(skipfile_name, "w") as output_yaml:
+        yaml.dump(skipfile, output_yaml)
+
+    repo.git.add(u=True)
+
+    url_split = repo.remotes.origin.url.split('/')
+    repo_name = url_split[-1].replace('.git', '')
+    username = url_split[-2]
+
+    github_repo = g.get_repo(f"{username}/{repo_name}")
+
+    # Base patch - base patch for PRs
+    base_patch = "origin/master"
+
+    # If there are any formatting updates, make these
+    if repo.index.diff("HEAD"):
+        summary = "Skipfile formatting updates"
+        message = "Clean up skipfile formatting."
+        base = "master"
+        head = f"formatting-update-{date_str}-{patch_count}"
+        base_patch = head
+
+        logger.debug(
+            "branches:" + "\n".join([str(b.name) for b in github_repo.get_branches()])
+        )
+
+        if len(summary) > 50:
+            # Truncate the commit summary to < 50 characters for git commit
+            truncated_summary = summary[:47] + "..."
+        else:
+            truncated_summary = summary
+
+        create_commit(repo, truncated_summary, message)
+
+        repo.create_head(head)
+
+        if args.github_push:
+            push_pr(
+                my_api_key,
+                repo,
+                github_repo,
+                summary,
+                message,
+                base,
+                head,
+            )
+
+        # Increment the patch counter
+        patch_count += 1
+        # Update the text version of skipfile
+        skipfile_txt = Path(skipfile_name).read_text()
+
+    run_info = "project: device, git_desc, build_name"
+    devices = set()
+
+    # fetch the run info
+    with open(args.metadata_filename, "r") as file:
+        for line in file:
+            # for each non-empty line
+            if line.strip():
+                (
+                    reproducer_script_name,
+                    run_project,
+                    device,
+                    git_desc,
+                    build_name,
+                ) = line.strip().split(",")
+                run_info += f"\n- {run_project}: {device}, {git_desc}, {build_name}"
+                devices.add(device)
+
+    test_dict = dict()
+    squad_build_urls = "\n\nSQUAD build URLs:"
+
+    # loop through squad builds (one for each linux project tested)
+    for build_name in squad_builds:
+        logger.info(f"SQUAD build name {build_name}")
+
+        if build_name != "":
+            # Get the build whose name matches the build name from our list
+            build = first(project.builds(version=build_name))
+            project_match = search(".*-(linux-.*)-plan.*", build_name)
+            project_name = project_match.group(1)
+            squad_build_urls += f"\n- {project_name}: {build.url}"
+            # Look at the tests for that build
+            tests = build.tests()
+            # Check each of the tests
+            for test in tests.values():
+                # We only care about the custom commands not boot
+                if "commands" in test.name:
+                    # get device type
+                    device = Environment(getid(test.environment)).slug
+                    tests_string = test.short_name
+                    # If this test isn't already in the test dict, add it
+                    if tests_string not in test_dict:
+                        test_dict[tests_string] = pd.DataFrame(
+                            0, index=list(devices), columns=squad_builds
+                        )
+                    test_dict[tests_string].loc[device, build_name] += 1
+                    logger.debug(
+                        f"tests: {tests_string}, processing item: {device} {build_name} "
+                        + f"success count: {test_dict[tests_string].loc[device, build_name]}",
+                    )
+
+    # Write results to file
+    for test, results_df in test_dict.items():
+        logger.debug(f"test: {test}")
+        logger.debug(test_dict[test])
+        results_df.to_csv(f"results-{test}.csv")
+
+    # tests to be removed
+    tests_to_remove = None
+
+    update = None
+
+    for test_name, results in test_dict.items():
+        removed_devices = ""
+        new_skipitem = None
+        # Reload the current version of the skipfile
+        skipfile = yaml.load(skipfile_txt)
+        new_skiplist = []
+        for skipitem in skipfile["skiplist"]:
+            # If the skipfile entry isn't a match, don't change it
+            if generate_command_name_from_list(skipitem["tests"]) != test_name:
+                new_skiplist.append(skipitem)
+            else:
+                tests_to_remove = skipitem["tests"]
+
+                # Set up new skipitem if it doesn't exist
+                if not new_skipitem:
+                    new_skipitem = deepcopy(skipitem)
+                else:
+                    new_skipitem = deepcopy(new_skipitem)
+                # Check each device for the test once found
+                for device in devices:
+                    if (
+                        device in new_skipitem["boards"]
+                        and results.loc[device].eq(args.run_count).all()
+                    ):
+                        logger.debug(
+                            f"Remove device {device} as test passed for all tested projects ({bool(results.loc[device].eq(args.run_count).all())})"
+                        )
+
+                        new_skipitem["boards"].remove(device)
+                        removed_devices += f"\n- {device}"
+                        logger.debug(f"removing device {device} for {test_name}")
+
+                        update = True
+
+                new_skiplist.append(new_skipitem)
+
+        # If there is an update to skipfile for current test
+        if update:
+            # Sleep before pushing again to prevent spamming Github
+            sleep(30)
+            # head name for update
+            head = f"skipfile-update-{date_str}-{patch_count}"
+
+            # Check out the base patch
+            repo.git.checkout(base_patch)
+
+            skipfile["skiplist"] = new_skiplist
+
+            # Check out the head for the changes we will make
+            repo.git.branch(head)
+            repo.git.checkout(head)
+
+            # make updates and create a commit for it
+            with open(skipfile_name, "w") as output_yaml:
+                yaml.dump(skipfile, output_yaml)
+
+            repo.git.add(u=True)
+
+            tests_string = ",".join(tests_to_remove)
+            tests_bulleted_string = "\n- " + "\n- ".join(tests_to_remove)
+
+            summary = f"automated: linux: ltp: skipfile: remove {tests_string}"
+
+            message = (
+                f"Updates to skipfile to remove:\n{tests_bulleted_string}\n\n"
+                + f"Tests did not hang so do not need to be skipped.\n\n"
+                + f"Remove for devices:\n{removed_devices}\n\n"
+                + f"Tests run {test_rerun_count} time(s) per device.\n\n"
+                + f"Tested on:\n{run_info}"
+                + f"{squad_build_urls}"
+            )
+            # set base patch for PR
+            base = base_patch
+
+            if len(summary) > 50:
+                # Truncate the commit summary to < 50 characters for git commit
+                truncated_summary = summary[:47] + "..."
+            else:
+                truncated_summary = summary
+
+            create_commit(repo, truncated_summary, message)
+
+            logger.debug(summary)
+            logger.debug(message)
+
+            repo.create_head(head)
+
+            if args.github_push:
+                push_pr(
+                    my_api_key,
+                    repo,
+                    github_repo,
+                    summary,
+                    message,
+                    base,
+                    head,
+                )
+
+            patch_count += 1
+            update = False
+            new_skipitem = None
+            # Log commit to file
+            with open(f"{head}.diff", "w") as file:
+                diff = popen(f"git diff {base} {head}").read()
+                file.write(f"{summary}\n{message}\n{diff}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    exit(run())
