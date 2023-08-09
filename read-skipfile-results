@@ -1,0 +1,368 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2023-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+import argparse
+import copy
+import json
+import logging
+import os
+import pathlib
+import pprint
+import re
+import sys
+from datetime import datetime
+from os import environ
+
+from git import Repo
+from github import Github
+from ruamel.yaml import YAML
+from squad_client.core.api import SquadApi
+from squad_client.core.models import Environment, Squad, TestRun
+from squad_client.utils import first, getid
+
+from squadutilslib import get_file
+
+
+def parse_args(raw_args):
+    parser = argparse.ArgumentParser(description="Read results and update skipfile")
+
+    parser.add_argument(
+        "--group-name",
+        required=True,
+    )
+    parser.add_argument(
+        "--squad-host",
+        required=False,
+        default="https://qa-reports.linaro.org/",
+    )
+    parser.add_argument(
+        "--project_name",
+        required=False,
+        default="skipfile-testing",
+    )
+
+    parser.add_argument(
+        "--skipfile",
+        required=False,
+        default="automated/linux/ltp/skipfile-lkft.yaml",
+    )
+
+    parser.add_argument(
+        "--builds-file",
+        required=False,
+        default="builds_for_skipfile_runs.txt",
+        help="File containing the list of SQUAD build names",
+    )
+
+    parser.add_argument(
+        "--username",
+        required=False,
+        default="katieworton",
+        help="The username for the test-definitions repo",
+    )
+    parser.add_argument(
+        "--github-token",
+        required=False,
+        default="GITHUB_ACCESS_TOKEN",
+        help="The name of the environment variable containing the Github API token.",
+    )
+    parser.add_argument(
+        "--repo-path",
+        required=False,
+        default="test-definitions",
+        help="The path of the test-definitions repo.",
+    )
+
+    parser.add_argument(
+        "--run-count",
+        required=True,
+        type=int,
+        help="The number of runs performed.",
+    )
+
+    return parser.parse_args(raw_args)
+
+
+def delete_skiplist_entry(skipfile, url):
+    """
+    Delete an entry from the skiplist (for example, when a bug has been fixed)
+    """
+    skipfile["skiplist"] = [test for test in skipfile["skiplist"] if url != test["url"]]
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def create_commit(repo, summary, message):
+    repo.git.commit(
+        "-m",
+        f"{summary}\n\n{message}",
+    )
+
+
+def create_commit_push_pr(
+    token, local_repo, github_repo, username, summary, message, base, head
+):
+    create_commit(local_repo, summary, message)
+
+    local_repo.create_head(head)
+
+    local_repo.git.push(
+        f"https://{username}:{token}@github.com/{username}/test-definitions",
+        f"{head}",
+        "-f",
+    )
+
+    title = f"[automated] {summary}"
+    body = f"""[automated] {message}"""
+
+    pr = github_repo.create_pull(
+        title=title,
+        body=body,
+        head=head,
+        base=base,
+    )
+    print("pr", pr)
+
+
+def print_rate_limits(g):
+    rate_limit = g.get_rate_limit()
+    print(rate_limit)
+    remaining = rate_limit.core.remaining
+    print(remaining)
+    reset_time = rate_limit.core.reset
+    print(reset_time)
+
+
+def run(raw_args=None):
+    args = parse_args(raw_args)
+    SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", args.squad_host))
+
+    # log date
+    date_str = f"{datetime.now():%Y-%m-%d}"
+
+    builds = args.builds_file
+    group = Squad().group(args.group_name)
+    project = group.project(args.project_name)
+
+    builds_list_file = open(builds, "r")
+    squad_builds = builds_list_file.readlines()
+
+    results_file_name = "results.csv"
+    results_file = open(results_file_name, "w+")
+
+    skipfile_name = args.skipfile
+
+    # Set up Github access
+    username = args.username
+    my_api_key = environ.get(args.github_token)
+    g = Github(my_api_key)
+
+    # Check test-definitions exists
+
+    if not os.path.isdir(args.repo_path):
+        sys.exit(1)
+
+    repo = Repo(args.repo_path)
+
+    os.chdir(args.repo_path)
+
+    # Any hangs will not produce a result - so the results file will contain
+    # the results for only non-hanging tests.
+    test_rerun_count = args.run_count
+    build_scores = dict()
+    patch_count = 0
+
+    # Read skipfile
+    skipfile_txt = pathlib.Path(skipfile_name).read_text()
+    yaml = YAML()
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    skipfile = yaml.load(skipfile_txt)
+
+    # fix formatting and create a commit for it
+    with open(skipfile_name, "w") as output_yaml:
+        yaml.dump(skipfile, output_yaml)
+
+    repo.git.add(u=True)
+
+    github_repo = g.get_repo(f"{username}/test-definitions")
+
+    # If there are any formatting updates, make these
+    if repo.index.diff("HEAD"):
+        summary = "Skipfile formatting updates"
+        message = "Clean up skipfile formatting."
+        base = "master"
+        head = f"formatting-update-test-{date_str}-{patch_count}"
+
+        print([str(b.name) for b in github_repo.get_branches()])
+
+        create_commit_push_pr(
+            my_api_key, repo, github_repo, username, summary, message, base, head
+        )
+        print(f"Pushed to {head}")
+
+        # Increment the patch counter
+        patch_count += 1
+
+    # Loop through and count the non-hangs
+    for build_name in squad_builds:
+        build_scores[build_name] = dict()
+        pass_counts = build_scores[build_name]
+        logger.info(f"SQUAD build name {build_name}")
+        # TODO Get the build metadata
+        if build_name != "":
+            # Get the build whose name matches the build name from our list
+            build = first(project.builds(version=build_name))
+            # Look at the tests for that build
+            tests = build.tests()
+            # Check each of the tests
+            for test in tests.values():
+                # We only care about the custom commands not boot
+                if "commands" in test.name:
+                    env = Environment(getid(test.environment))
+                    testrun = TestRun(getid(test.test_run))
+                    get_file(testrun.job_url + "/results")
+                    reproducer = open("results", "r")
+                    results_json = json.load(reproducer)
+                    try:
+                        # gets the name of the custom command
+                        name = (
+                            results_json["lava"]["commands"]["repository"]["run"][
+                                "steps"
+                            ][0]
+                            .split(" ")[1]
+                            .strip()
+                        )
+                        # Gets the result if the test did not time out
+                        overall_result = results_json["commands"][name]["result"]
+                        # Get names of tests run and split it into a list
+                        tests = (
+                            results_json["lava"]["commands"]["repository"]["run"][
+                                "steps"
+                            ][0]
+                            .split("cd /opt/ltp && ./runltp -s ")[1]
+                            .strip()
+                        )
+                        tests = re.sub("'", "", tests)
+                        tests = re.sub('"', "", tests).split(" ")
+
+                        # get device type from reproducer
+                        get_file(testrun.job_url + "/reproducer")
+                        reproducer = pathlib.Path("reproducer").read_text(
+                            encoding="utf-8"
+                        )
+                        device = re.findall("--device (\S+)", reproducer)[0]
+                        tests_string = ",".join(sorted(tests))
+                        if tests_string in pass_counts:
+                            if device in pass_counts[tests_string]["count"]:
+                                pass_counts[tests_string]["count"][device] += 1
+                            else:
+                                pass_counts[tests_string][device] = dict()
+                                pass_counts[tests_string]["count"][device] = 1
+                                pass_counts[tests_string]["test_list"] = tests
+                        else:
+                            pass_counts[tests_string] = dict()
+                            pass_counts[tests_string]["count"] = dict()
+                            pass_counts[tests_string]["count"][device] = 1
+                            pass_counts[tests_string]["test_list"] = tests
+
+                    except KeyError:
+                        overall_result = "result not found - investigate"
+
+                    # Get runtime
+                    try:
+                        time = results_json["lava"]["commands"]["duration"]
+                    except KeyError:
+                        time = "time not found"
+                    # Write results to CSV
+                    results_file.write(
+                        f"{test.short_name},{testrun.job_url},{env.slug},{time},{overall_result}\n"
+                    )
+
+                    print(f"Results saved to {results_file_name}")
+
+    pprint.pprint(build_scores)
+
+    # loop through the builds/branches and decide what to remove
+
+    tests = ""
+    update = False
+    for build_name, build_values in build_scores.items():
+        print(build_name)
+        # test_name:
+        #     count: device: int
+        #     test_list: list
+        for test_name, test_values in build_values.items():
+            print(test_name)
+            # If all tests passed on this device, remove device from skipfile
+            if test_values["count"][device] == test_rerun_count:
+                new_skiplist = []
+                for skipitem in skipfile["skiplist"]:
+                    # search for entry
+                    tests = test_values["test_list"]
+                    # If the skipfile entry isn't a match, don't change it
+                    if set(tests).difference(set(skipitem["tests"])):
+                        new_skiplist.append(skipitem)
+                    # If the skipfile entry matches the tests, remove the board
+                    else:
+                        print("match")
+                        # remove device
+                        new_skipitem = copy.deepcopy(skipitem)
+                        if isinstance(new_skipitem["boards"], list):
+                            print("boards is a list", new_skipitem["boards"])
+                            if device in new_skipitem["boards"]:
+                                print("remove item")
+                                new_skipitem["boards"].remove(device)
+                                update = True
+                            new_skiplist.append(new_skipitem)
+
+            # If there is an update to skipfile for current test
+            if update:
+                skipfile["skiplist"] = new_skiplist
+
+                # if there are changes, update skipfile
+                # Produce skipfile update
+                with open(skipfile_name, "w") as output_yaml:
+                    yaml.dump(skipfile, output_yaml)
+
+                # make updates and create a commit for it
+                with open(skipfile_name, "w") as output_yaml:
+                    yaml.dump(skipfile, output_yaml)
+
+                repo.git.add(u=True)
+                tests_string = ", ".join(tests)
+
+                summary = f"Updates to skipfile to remove {tests_string}"
+                message = f"Updates to skipfile to remove {tests_string}. Tests run {test_rerun_count} time(s)."
+                base = "master"
+                head = f"update-{date_str}-{patch_count}"
+                print_rate_limits(g)
+                if head not in [str(b.name) for b in github_repo.get_branches()]:
+                    create_commit_push_pr(
+                        my_api_key,
+                        repo,
+                        github_repo,
+                        username,
+                        summary,
+                        message,
+                        base,
+                        head,
+                    )
+                    print(f"Pushed to {head}")
+                else:
+                    print(f"{head} Already exists - skipping")
+
+                patch_count += 1
+                update = False
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run())

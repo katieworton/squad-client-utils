@@ -1,1 +1,4 @@
 squad_client
+ruamel.YAML
+PyGithub
+gitpython
