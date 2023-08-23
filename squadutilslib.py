@@ -13,9 +13,9 @@ from pathlib import Path
 from re import findall, match, search, sub
 
 from requests import HTTPError, get
-from squad_client.core.models import Squad, TestRun
+from squad_client.core.models import Build, Squad, TestRun
 from squad_client.shortcuts import download_tests
-from squad_client.utils import first
+from squad_client.utils import first, getid
 from yaml import FullLoader, dump, load
 
 basicConfig(level=INFO)
@@ -185,7 +185,7 @@ def get_reproducer(
     # Get the reproducer if a testrun is found
     if testrun:
         logger.debug(
-            f"Found testrun {testrun} with build_name {testrun.metadata.build_name}, url: {testrun.url}"
+            f"Found testrun {testrun} with build_name {testrun.metadata.build_name}, url: {testrun.url}, git_desc: {Build(getid(testrun.build)).metadata.git_describe}"
         )
 
         # In theory there should only be one of those
@@ -203,7 +203,10 @@ def get_reproducer(
         except HTTPError:
             logger.error(f"Reproducer not found at {testrun.job_url}!")
             raise ReproducerNotFound
-        return Path(reproducer).read_text(encoding="utf-8")
+        return (
+            Path(reproducer).read_text(encoding="utf-8"),
+            Build(getid(testrun.build)).metadata.git_describe,
+        )
     else:
         raise ReproducerNotFound
 
