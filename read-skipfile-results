@@ -47,6 +47,13 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--sha-filename",
+        required=False,
+        default="sha_list.csv",
+        help="Name for the file containing the build SHA.",
+    )
+
+    parser.add_argument(
         "--skipfile",
         required=False,
         default="automated/linux/ltp/skipfile-lkft.yaml",
@@ -215,7 +222,16 @@ def run(raw_args=None):
         build_scores[build_name] = dict()
         pass_counts = build_scores[build_name]
         logger.info(f"SQUAD build name {build_name}")
-        # TODO Get the build metadata
+        # fetch the SHA info
+        sha_info = ""
+        with open(args.sha_filename, "r") as file:
+            for line in file:
+                # for each non-empty line, filter SHAs
+                if line.strip():
+                    reproducer_script_name, device, sha = line
+                    if reproducer_script_name in build_name:
+                        sha_info += f"{device}: {sha}"
+
         if build_name != "":
             # Get the build whose name matches the build name from our list
             build = first(project.builds(version=build_name))
@@ -339,7 +355,7 @@ def run(raw_args=None):
                 tests_string = ", ".join(tests)
 
                 summary = f"Updates to skipfile to remove {tests_string}"
-                message = f"Updates to skipfile to remove {tests_string}. Tests run {test_rerun_count} time(s)."
+                message = f"Updates to skipfile to remove {tests_string}. Tests run {test_rerun_count} time(s). Tested on:\n{sha_info}"
                 base = "master"
                 head = f"update-{date_str}-{patch_count}"
                 print_rate_limits(g)
