@@ -10,18 +10,14 @@ echo "QA_PROJECT_NAME: ${QA_PROJECT_NAME}"
 test -n "${QA_PROJECT_NAME}" || export QA_PROJECT_NAME="${QA_PROJECT}"
 
 SQUAD_PROJECT="${QA_PROJECT=}"
-report_job_name="read_results"
+report_job_name="callback"
 
 # Find report job
 echo "Will do tests. Need to register QA callback."
 curl -f --silent "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${CI_PIPELINE_ID}/jobs?scope[]=manual" >jobs-manual.json
 echo "$(<jobs-manual.json)"
-#echo "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/pipelines/${CI_PIPELINE_ID}/jobs?scope[]=manual"
-#cat jobs-manual.json
-job_id="$(jq -r ".[] | select(.name == \"read_results\") | .id" jobs-manual.json)"
-#echo "job_id is $(jq -r ".[] | select(.name == \"read_results\") | .id" jobs-manual.json)"
+job_id="$(jq -r ".[] | select(.name == \"callback\") | .id" jobs-manual.json)"
 callback_url="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${job_id}/play"
-#echo "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/jobs/${job_id}/play"
 echo "Callback URL: [${callback_url}]"
 
 echo "${BUILD_ID}"
