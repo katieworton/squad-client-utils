@@ -185,7 +185,7 @@ def get_reproducer(
     # Get the reproducer if a testrun is found
     if testrun:
         logger.debug(
-            f"Found testrun {testrun} with build_name {testrun.metadata.build_name}, url: {testrun.url}"
+            f"Found testrun {testrun} with build_name {testrun.metadata.build_name}, url: {testrun.url}, SHA: {testrun.metadata.git_sha}"
         )
 
         # In theory there should only be one of those
@@ -203,7 +203,7 @@ def get_reproducer(
         except HTTPError:
             logger.error(f"Reproducer not found at {testrun.job_url}!")
             raise ReproducerNotFound
-        return Path(reproducer).read_text(encoding="utf-8")
+        return Path(reproducer).read_text(encoding="utf-8"), testrun.metadata.git_sha
     else:
         raise ReproducerNotFound
 
