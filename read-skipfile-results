@@ -13,11 +13,10 @@ from json import load
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import chdir, environ, getenv, path
 from pathlib import Path
-from re import sub
+from re import findall, sub
 
 from git import Repo
 from github import Github
-from regex import findall
 from ruamel.yaml import YAML
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Environment, Squad, TestRun
