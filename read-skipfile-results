@@ -6,20 +6,18 @@
 #
 # SPDX-License-Identifier: MIT
 
-import argparse
-import copy
-import json
-import logging
-import os
-import pathlib
-import pprint
-import re
-import sys
+from argparse import ArgumentParser
+from copy import deepcopy
 from datetime import datetime
-from os import environ
+from json import load
+from logging import DEBUG, INFO, basicConfig, getLogger
+from os import chdir, environ, getenv, path
+from pathlib import Path
+from re import sub
 
 from git import Repo
 from github import Github
+from regex import findall
 from ruamel.yaml import YAML
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Environment, Squad, TestRun
@@ -29,21 +27,53 @@ from squadutilslib import get_file
 
 
 def parse_args(raw_args):
-    parser = argparse.ArgumentParser(description="Read results and update skipfile")
+    parser = ArgumentParser(description="Read results and update skipfile")
 
     parser.add_argument(
         "--group-name",
         required=True,
     )
+
     parser.add_argument(
-        "--squad-host",
-        required=False,
-        default="https://qa-reports.linaro.org/",
+        "--run-count",
+        required=True,
+        type=int,
+        help="The number of runs performed.",
     )
+
+    parser.add_argument(
+        "--builds-file",
+        required=False,
+        default="builds_for_skipfile_runs.txt",
+        help="File containing the list of SQUAD build names",
+    )
+
+    parser.add_argument(
+        "--debug",
+        required=False,
+        action="store_true",
+        default=False,
+        help="Display debug messages.",
+    )
+
+    parser.add_argument(
+        "--github-token",
+        required=False,
+        default="GITHUB_ACCESS_TOKEN",
+        help="The name of the environment variable containing the Github API token.",
+    )
+
     parser.add_argument(
         "--project_name",
         required=False,
         default="skipfile-testing",
+    )
+
+    parser.add_argument(
+        "--repo-path",
+        required=False,
+        default="test-definitions",
+        help="The path of the test-definitions repo.",
     )
 
     parser.add_argument(
@@ -60,10 +90,9 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
-        "--builds-file",
+        "--squad-host",
         required=False,
-        default="builds_for_skipfile_runs.txt",
-        help="File containing the list of SQUAD build names",
+        default="https://qa-reports.linaro.org/",
     )
 
     parser.add_argument(
@@ -71,25 +100,6 @@ def parse_args(raw_args):
         required=False,
         default="katieworton",
         help="The username for the test-definitions repo",
-    )
-    parser.add_argument(
-        "--github-token",
-        required=False,
-        default="GITHUB_ACCESS_TOKEN",
-        help="The name of the environment variable containing the Github API token.",
-    )
-    parser.add_argument(
-        "--repo-path",
-        required=False,
-        default="test-definitions",
-        help="The path of the test-definitions repo.",
-    )
-
-    parser.add_argument(
-        "--run-count",
-        required=True,
-        type=int,
-        help="The number of runs performed.",
     )
 
     return parser.parse_args(raw_args)
@@ -102,8 +112,8 @@ def delete_skiplist_entry(skipfile, url):
     skipfile["skiplist"] = [test for test in skipfile["skiplist"] if url != test["url"]]
 
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+basicConfig(level=INFO)
+logger = getLogger(__name__)
 
 
 def create_commit(repo, summary, message):
@@ -135,21 +145,15 @@ def create_commit_push_pr(
         head=head,
         base=base,
     )
-    print("pr", pr)
-
-
-def print_rate_limits(g):
-    rate_limit = g.get_rate_limit()
-    print(rate_limit)
-    remaining = rate_limit.core.remaining
-    print(remaining)
-    reset_time = rate_limit.core.reset
-    print(reset_time)
+    logger.debug("PR created", pr)
 
 
 def run(raw_args=None):
     args = parse_args(raw_args)
-    SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", args.squad_host))
+    SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", args.squad_host))
+
+    if args.debug:
+        logger.setLevel(level=DEBUG)
 
     # log date
     date_str = f"{datetime.now():%Y-%m-%d}"
@@ -172,13 +176,12 @@ def run(raw_args=None):
     g = Github(my_api_key)
 
     # Check test-definitions exists
-
-    if not os.path.isdir(args.repo_path):
-        sys.exit(1)
+    if not path.isdir(args.repo_path):
+        exit(1)
 
     repo = Repo(args.repo_path)
 
-    os.chdir(args.repo_path)
+    chdir(args.repo_path)
 
     # Any hangs will not produce a result - so the results file will contain
     # the results for only non-hanging tests.
@@ -187,7 +190,7 @@ def run(raw_args=None):
     patch_count = 0
 
     # Read skipfile
-    skipfile_txt = pathlib.Path(skipfile_name).read_text()
+    skipfile_txt = Path(skipfile_name).read_text()
     yaml = YAML()
     yaml.indent(mapping=2, sequence=4, offset=2)
     skipfile = yaml.load(skipfile_txt)
@@ -207,12 +210,12 @@ def run(raw_args=None):
         base = "master"
         head = f"formatting-update-test-{date_str}-{patch_count}"
 
-        print([str(b.name) for b in github_repo.get_branches()])
+        logger.debug([str(b.name) for b in github_repo.get_branches()])
 
         create_commit_push_pr(
             my_api_key, repo, github_repo, username, summary, message, base, head
         )
-        print(f"Pushed to {head}")
+        logger.debug(f"Pushed to {head}")
 
         # Increment the patch counter
         patch_count += 1
@@ -245,7 +248,7 @@ def run(raw_args=None):
                     testrun = TestRun(getid(test.test_run))
                     get_file(testrun.job_url + "/results")
                     reproducer = open("results", "r")
-                    results_json = json.load(reproducer)
+                    results_json = load(reproducer)
                     try:
                         # gets the name of the custom command
                         name = (
@@ -265,15 +268,13 @@ def run(raw_args=None):
                             .split("cd /opt/ltp && ./runltp -s ")[1]
                             .strip()
                         )
-                        tests = re.sub("'", "", tests)
-                        tests = re.sub('"', "", tests).split(" ")
+                        tests = sub("'", "", tests)
+                        tests = sub('"', "", tests).split(" ")
 
                         # get device type from reproducer
                         get_file(testrun.job_url + "/reproducer")
-                        reproducer = pathlib.Path("reproducer").read_text(
-                            encoding="utf-8"
-                        )
-                        device = re.findall("--device (\S+)", reproducer)[0]
+                        reproducer = Path("reproducer").read_text(encoding="utf-8")
+                        device = findall("--device (\S+)", reproducer)[0]
                         tests_string = ",".join(sorted(tests))
                         if tests_string in pass_counts:
                             if device in pass_counts[tests_string]["count"]:
@@ -301,21 +302,17 @@ def run(raw_args=None):
                         f"{test.short_name},{testrun.job_url},{env.slug},{time},{overall_result}\n"
                     )
 
-                    print(f"Results saved to {results_file_name}")
-
-    pprint.pprint(build_scores)
+                    logger.debug(f"Results saved to {results_file_name}")
 
     # loop through the builds/branches and decide what to remove
 
     tests = ""
     update = False
     for build_name, build_values in build_scores.items():
-        print(build_name)
         # test_name:
         #     count: device: int
         #     test_list: list
         for test_name, test_values in build_values.items():
-            print(test_name)
             # If all tests passed on this device, remove device from skipfile
             if test_values["count"][device] == test_rerun_count:
                 new_skiplist = []
@@ -327,13 +324,10 @@ def run(raw_args=None):
                         new_skiplist.append(skipitem)
                     # If the skipfile entry matches the tests, remove the board
                     else:
-                        print("match")
                         # remove device
-                        new_skipitem = copy.deepcopy(skipitem)
+                        new_skipitem = deepcopy(skipitem)
                         if isinstance(new_skipitem["boards"], list):
-                            print("boards is a list", new_skipitem["boards"])
                             if device in new_skipitem["boards"]:
-                                print("remove item")
                                 new_skipitem["boards"].remove(device)
                                 update = True
                             new_skiplist.append(new_skipitem)
@@ -355,10 +349,14 @@ def run(raw_args=None):
                 tests_string = ", ".join(tests)
 
                 summary = f"Updates to skipfile to remove {tests_string}"
-                message = f"Updates to skipfile to remove {tests_string}. Tests run {test_rerun_count} time(s). Tested on:\n{sha_info}"
+                message = (
+                    f"Updates to skipfile to remove {tests_string}."
+                    + f"Tests run {test_rerun_count} time(s)."
+                    + f"Tested on:\n{sha_info}"
+                )
                 base = "master"
                 head = f"update-{date_str}-{patch_count}"
-                print_rate_limits(g)
+
                 if head not in [str(b.name) for b in github_repo.get_branches()]:
                     create_commit_push_pr(
                         my_api_key,
@@ -370,9 +368,9 @@ def run(raw_args=None):
                         base,
                         head,
                     )
-                    print(f"Pushed to {head}")
+                    logger.debug(f"Pushed to {head}")
                 else:
-                    print(f"{head} Already exists - skipping")
+                    logger.debug(f"{head} Already exists - skipping")
 
                 patch_count += 1
                 update = False
@@ -381,4 +379,4 @@ def run(raw_args=None):
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    exit(run())
