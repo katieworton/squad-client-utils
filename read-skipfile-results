@@ -11,7 +11,7 @@ from copy import deepcopy
 from datetime import datetime
 from json import load
 from logging import DEBUG, INFO, basicConfig, getLogger
-from os import chdir, environ, getenv, path
+from os import chdir, environ, getenv, path, rename
 from pathlib import Path
 from re import findall, sub
 
@@ -180,6 +180,8 @@ def run(raw_args=None):
 
     repo = Repo(args.repo_path)
 
+    # Move SHA file to test-definitions for easier access
+    rename(args.sha_filename, f"{args.repo_path}/{args.sha_filename}")
     chdir(args.repo_path)
 
     # Any hangs will not produce a result - so the results file will contain
