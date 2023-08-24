@@ -207,7 +207,7 @@ def run(raw_args=None):
         summary = "Skipfile formatting updates"
         message = "Clean up skipfile formatting."
         base = "master"
-        head = f"formatting-update-test-{date_str}-{patch_count}"
+        head = f"formatting-update-{date_str}-{patch_count}"
 
         logger.debug([str(b.name) for b in github_repo.get_branches()])
 
@@ -354,7 +354,7 @@ def run(raw_args=None):
                     + f"Tested on:\n{sha_info}"
                 )
                 base = "master"
-                head = f"update-{date_str}-{patch_count}"
+                head = f"skipfile-update-{date_str}-{patch_count}"
 
                 if head not in [str(b.name) for b in github_repo.get_branches()]:
                     create_commit_push_pr(
