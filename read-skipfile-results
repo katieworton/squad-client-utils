@@ -125,7 +125,13 @@ def create_commit(repo, summary, message):
 def create_commit_push_pr(
     token, local_repo, github_repo, username, summary, message, base, head
 ):
-    create_commit(local_repo, summary, message)
+    if len(summary) > 50:
+        # Truncate the commit summary to < 50 characters for git commit
+        truncated_summary = summary[:47] + "..."
+    else:
+        truncated_summary = summary
+
+    create_commit(local_repo, truncated_summary, message)
 
     local_repo.create_head(head)
 
@@ -234,7 +240,7 @@ def run(raw_args=None):
                 if line.strip():
                     reproducer_script_name, device, sha = line.split(",")
                     if reproducer_script_name in build_name:
-                        sha_info += f"{device}: {sha}"
+                        sha_info += f"\n- {device}: {sha}"
 
         if build_name != "":
             # Get the build whose name matches the build name from our list
@@ -309,6 +315,7 @@ def run(raw_args=None):
 
     tests = ""
     update = False
+    removed_devices = ""
     for build_name, build_values in build_scores.items():
         # test_name:
         #     count: device: int
@@ -330,6 +337,7 @@ def run(raw_args=None):
                         if isinstance(new_skipitem["boards"], list):
                             if device in new_skipitem["boards"]:
                                 new_skipitem["boards"].remove(device)
+                                removed_devices += f"\n- {device}"
                                 update = True
                             new_skiplist.append(new_skipitem)
 
@@ -347,12 +355,15 @@ def run(raw_args=None):
                     yaml.dump(skipfile, output_yaml)
 
                 repo.git.add(u=True)
-                tests_string = ", ".join(tests)
+                tests_string = "\n -".join(tests)
 
-                summary = f"Updates to skipfile to remove {tests_string}"
+                summary = f"automated: linux: ltp: skipfile: remove {tests_string}"
+
                 message = (
-                    f"Updates to skipfile to remove {tests_string}."
-                    + f"Tests run {test_rerun_count} time(s)."
+                    f"Updates to skipfile to remove:\n{tests_string}.\n\n"
+                    + f"Test were shown to pass/fail rather than hang do not need to be skipped.\n\n"
+                    + f"Remove for devices:\n{removed_devices}\n\n"
+                    + f"Tests run {test_rerun_count} time(s).\n\n"
                     + f"Tested on:\n{sha_info}"
                 )
                 base = "master"
