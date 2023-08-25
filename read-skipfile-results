@@ -232,7 +232,7 @@ def run(raw_args=None):
             for line in file:
                 # for each non-empty line, filter SHAs
                 if line.strip():
-                    reproducer_script_name, device, sha = line
+                    reproducer_script_name, device, sha = line.split(",")
                     if reproducer_script_name in build_name:
                         sha_info += f"{device}: {sha}"
 
