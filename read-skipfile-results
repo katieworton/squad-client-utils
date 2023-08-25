@@ -321,6 +321,7 @@ def run(raw_args=None):
         #     count: device: int
         #     test_list: list
         for test_name, test_values in build_values.items():
+            removed_devices = ""
             # If all tests passed on this device, remove device from skipfile
             if test_values["count"][device] == test_rerun_count:
                 new_skiplist = []
