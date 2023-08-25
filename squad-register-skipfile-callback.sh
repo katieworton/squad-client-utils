@@ -11,7 +11,7 @@ test -n "${QA_PROJECT_NAME}" || export QA_PROJECT_NAME="${QA_PROJECT}"
 test -n "${QA_PROJECT_NAME_SANITY}" || export QA_PROJECT_NAME="${QA_PROJECT_SANITY}"
 
 SQUAD_PROJECT="${QA_PROJECT=}"
-REPORT_JOB_NAME=”${REPORT_JOB_NAME:='report'}”
+report_job_name=”${report_job_name:='report'}”
 if [ "${CI_BUILD_STAGE}" = "sanity" ]; then
   SQUAD_PROJECT="${QA_PROJECT_SANITY}"
   report_job_name="report-sanity"
