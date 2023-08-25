@@ -355,12 +355,13 @@ def run(raw_args=None):
                     yaml.dump(skipfile, output_yaml)
 
                 repo.git.add(u=True)
-                tests_string = "\n -".join(tests)
+                tests_string = ",".join(tests)
+                tests_bulleted_string = "\n- " + "\n- ".join(tests)
 
                 summary = f"automated: linux: ltp: skipfile: remove {tests_string}"
 
                 message = (
-                    f"Updates to skipfile to remove:\n{tests_string}.\n\n"
+                    f"Updates to skipfile to remove:\n{tests_bulleted_string}.\n\n"
                     + f"Test were shown to pass/fail rather than hang do not need to be skipped.\n\n"
                     + f"Remove for devices:\n{removed_devices}\n\n"
                     + f"Tests run {test_rerun_count} time(s).\n\n"
@@ -369,20 +370,17 @@ def run(raw_args=None):
                 base = "master"
                 head = f"skipfile-update-{date_str}-{patch_count}"
 
-                if head not in [str(b.name) for b in github_repo.get_branches()]:
-                    create_commit_push_pr(
-                        my_api_key,
-                        repo,
-                        github_repo,
-                        username,
-                        summary,
-                        message,
-                        base,
-                        head,
-                    )
-                    logger.debug(f"Pushed to {head}")
-                else:
-                    logger.debug(f"{head} Already exists - skipping")
+                create_commit_push_pr(
+                    my_api_key,
+                    repo,
+                    github_repo,
+                    username,
+                    summary,
+                    message,
+                    base,
+                    head,
+                )
+                logger.debug(f"Pushed to {head}")
 
                 patch_count += 1
                 update = False
