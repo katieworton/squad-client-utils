@@ -63,6 +63,13 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--github-push",
+        required=False,
+        default=True,
+        help="Should the results be pushed to Github.",
+    )
+
+    parser.add_argument(
         "--project_name",
         required=False,
         default="skipfile-testing",
@@ -123,7 +130,7 @@ def create_commit(repo, summary, message):
 
 
 def create_commit_push_pr(
-    token, local_repo, github_repo, username, summary, message, base, head
+    token, local_repo, github_repo, username, summary, message, base, head, push=True
 ):
     if len(summary) > 50:
         # Truncate the commit summary to < 50 characters for git commit
@@ -220,7 +227,15 @@ def run(raw_args=None):
         logger.debug([str(b.name) for b in github_repo.get_branches()])
 
         create_commit_push_pr(
-            my_api_key, repo, github_repo, username, summary, message, base, head
+            my_api_key,
+            repo,
+            github_repo,
+            username,
+            summary,
+            message,
+            base,
+            head,
+            args.github_push,
         )
         logger.debug(f"Pushed to {head}")
 
@@ -380,6 +395,7 @@ def run(raw_args=None):
                     message,
                     base,
                     head,
+                    args.github_push,
                 )
                 logger.debug(f"Pushed to {head}")
 
