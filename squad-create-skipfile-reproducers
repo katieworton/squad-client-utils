@@ -134,6 +134,14 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
+        "--run-count",
+        required=False,
+        default=2,
+        type=int,
+        help="The number of times to run each skipfile entry.",
+    )
+
+    parser.add_argument(
         "--metadata-filename",
         required=False,
         default="metadata_list.csv",
@@ -258,7 +266,8 @@ def run(raw_args=None):
                         for line in reproducer.split("\n"):
                             # Don't write back the #!/bin/bash part of reproducer
                             if "#!/bin/bash" != line.strip():
-                                multiple_reproducer_file.write(line + "\n")
+                                for i in range(args.run_count):
+                                    multiple_reproducer_file.write(line + "\n")
 
                     logger.debug(reproducer)
 
