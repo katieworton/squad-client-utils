@@ -66,6 +66,7 @@ def parse_args(raw_args):
         "--github-push",
         required=False,
         default=True,
+        type=bool,
         help="Should the results be pushed to Github.",
     )
 
