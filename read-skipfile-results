@@ -175,6 +175,7 @@ def run(raw_args=None):
     builds = args.builds_file
     group = Squad().group(args.group_name)
     project = group.project(args.project_name)
+    devices = []
 
     builds_list_file = open(builds, "r")
     squad_builds = builds_list_file.readlines()
@@ -255,9 +256,10 @@ def run(raw_args=None):
             for line in file:
                 # for each non-empty line, filter SHAs
                 if line.strip():
-                    reproducer_script_name, device, sha = line.split(",")
+                    reproducer_script_name, device, sha = line.strip().split(",")
                     if reproducer_script_name in build_name:
                         sha_info += f"\n- {device}: {sha}"
+                        devices.append(device)
 
         if build_name != "":
             # Get the build whose name matches the build name from our list
@@ -304,7 +306,6 @@ def run(raw_args=None):
                             if device in pass_counts[tests_string]["count"]:
                                 pass_counts[tests_string]["count"][device] += 1
                             else:
-                                pass_counts[tests_string][device] = dict()
                                 pass_counts[tests_string]["count"][device] = 1
                                 pass_counts[tests_string]["test_list"] = tests
                         else:
@@ -329,7 +330,6 @@ def run(raw_args=None):
                     logger.debug(f"Results saved to {results_file_name}")
 
     # loop through the builds/branches and decide what to remove
-
     tests = ""
     update = False
     removed_devices = ""
@@ -339,25 +339,29 @@ def run(raw_args=None):
         #     test_list: list
         for test_name, test_values in build_values.items():
             removed_devices = ""
-            # If all tests passed on this device, remove device from skipfile
-            if test_values["count"][device] == test_rerun_count:
-                new_skiplist = []
-                for skipitem in skipfile["skiplist"]:
-                    # search for entry
-                    tests = test_values["test_list"]
-                    # If the skipfile entry isn't a match, don't change it
-                    if set(tests).difference(set(skipitem["tests"])):
-                        new_skiplist.append(skipitem)
-                    # If the skipfile entry matches the tests, remove the board
-                    else:
-                        # remove device
-                        new_skipitem = deepcopy(skipitem)
-                        if isinstance(new_skipitem["boards"], list):
-                            if device in new_skipitem["boards"]:
-                                new_skipitem["boards"].remove(device)
-                                removed_devices += f"\n- {device}"
-                                update = True
-                            new_skiplist.append(new_skipitem)
+            for device in devices:
+                # If all tests passed on this device, remove device from skipfile
+                if (
+                    device in test_values["count"]
+                    and test_values["count"][device] == test_rerun_count
+                ):
+                    new_skiplist = []
+                    for skipitem in skipfile["skiplist"]:
+                        # search for entry
+                        tests = test_values["test_list"]
+                        # If the skipfile entry isn't a match, don't change it
+                        if set(tests).difference(set(skipitem["tests"])):
+                            new_skiplist.append(skipitem)
+                        # If the skipfile entry matches the tests, remove the board
+                        else:
+                            # remove device
+                            new_skipitem = deepcopy(skipitem)
+                            if isinstance(new_skipitem["boards"], list):
+                                if device in new_skipitem["boards"]:
+                                    new_skipitem["boards"].remove(device)
+                                    removed_devices += f"\n- {device}"
+                                    update = True
+                                new_skiplist.append(new_skipitem)
 
             # If there is an update to skipfile for current test
             if update:
@@ -379,7 +383,7 @@ def run(raw_args=None):
                 summary = f"automated: linux: ltp: skipfile: remove {tests_string}"
 
                 message = (
-                    f"Updates to skipfile to remove:\n{tests_bulleted_string}.\n\n"
+                    f"Updates to skipfile to remove:\n{tests_bulleted_string}\n\n"
                     + f"Test were shown to pass/fail rather than hang do not need to be skipped.\n\n"
                     + f"Remove for devices:\n{removed_devices}\n\n"
                     + f"Tests run {test_rerun_count} time(s).\n\n"
