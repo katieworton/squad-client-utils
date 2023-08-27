@@ -66,7 +66,7 @@ def parse_args(raw_args):
         "--github-push",
         required=False,
         default=True,
-        type=bool,
+        type=int,
         help="Should the results be pushed to Github.",
     )
 
@@ -143,22 +143,23 @@ def create_commit_push_pr(
 
     local_repo.create_head(head)
 
-    local_repo.git.push(
-        f"https://{username}:{token}@github.com/{username}/test-definitions",
-        f"{head}",
-        "-f",
-    )
+    if push:
+        local_repo.git.push(
+            f"https://{username}:{token}@github.com/{username}/test-definitions",
+            f"{head}",
+            "-f",
+        )
 
-    title = f"[automated] {summary}"
-    body = f"""[automated] {message}"""
+        title = f"[automated] {summary}"
+        body = f"""[automated] {message}"""
 
-    pr = github_repo.create_pull(
-        title=title,
-        body=body,
-        head=head,
-        base=base,
-    )
-    logger.debug(f"PR created {pr}")
+        pr = github_repo.create_pull(
+            title=title,
+            body=body,
+            head=head,
+            base=base,
+        )
+        logger.debug(f"PR created {pr}")
 
 
 def run(raw_args=None):
