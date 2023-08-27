@@ -149,6 +149,7 @@ def create_commit_push_pr(
             f"{head}",
             "-f",
         )
+        logger.debug(f"Pushed to {head}")
 
         title = f"[automated] {summary}"
         body = f"""[automated] {message}"""
@@ -240,7 +241,6 @@ def run(raw_args=None):
             head,
             args.github_push,
         )
-        logger.debug(f"Pushed to {head}")
 
         # Increment the patch counter
         patch_count += 1
@@ -403,7 +403,6 @@ def run(raw_args=None):
                     head,
                     args.github_push,
                 )
-                logger.debug(f"Pushed to {head}")
 
                 patch_count += 1
                 update = False
