@@ -268,6 +268,13 @@ def tuxtest_to_tuxplan_entry(tuxsuite_test):
                 else:
                     dict_entry[key] = dict()
                     dict_entry[key][test] = int(timeout)
+            elif key == "parameters" and "=" in value:
+                sub_key, sub_val = value.split("=")
+                if key in dict_entry:
+                    dict_entry[key][sub_key] = sub_val
+                else:
+                    dict_entry[key] = dict()
+                    dict_entry[key][sub_key] = sub_val
             elif key in dict_entry:
                 if not isinstance(dict_entry[key], list):
                     dict_entry[key] = [dict_entry[key]]
