@@ -143,7 +143,7 @@ def parse_args(raw_args):
     parser.add_argument(
         "--metadata-filename",
         required=False,
-        default="metadata_filename.csv",
+        default="metadata_list.csv",
         help="Name for the file containing extra info about the builds.",
     )
 
