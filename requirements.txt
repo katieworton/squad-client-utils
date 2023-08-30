@@ -1,4 +1,8 @@
-squad_client
+squad-client
 ruamel.YAML
 PyGithub
 gitpython
+python-git
+GitPython
+tuxsuite
+pandas
