@@ -15,6 +15,7 @@ from os import chdir, environ, getenv, path, rename
 from pathlib import Path
 from re import findall, sub
 
+import pandas as pd
 from git import Repo
 from github import Github
 from ruamel.yaml import YAML
@@ -179,10 +180,7 @@ def run(raw_args=None):
     devices = []
 
     builds_list_file = open(builds, "r")
-    squad_builds = builds_list_file.readlines()
-
-    results_file_name = "results.csv"
-    results_file = open(results_file_name, "w+")
+    squad_builds = [build_name.strip() for build_name in builds_list_file.readlines()]
 
     skipfile_name = args.skipfile
 
@@ -204,7 +202,6 @@ def run(raw_args=None):
     # Any hangs will not produce a result - so the results file will contain
     # the results for only non-hanging tests.
     test_rerun_count = args.run_count
-    build_scores = dict()
     patch_count = 0
 
     # Read skipfile
@@ -212,6 +209,15 @@ def run(raw_args=None):
     yaml = YAML()
     yaml.indent(mapping=2, sequence=4, offset=2)
     skipfile = yaml.load(skipfile_txt)
+
+    cleaned_skiplist = []
+
+    # Remove all_boards if used
+    for skipitem in skipfile["skiplist"]:
+        new_skipitem = deepcopy(skipitem)
+        cleaned_skiplist.append(new_skipitem)
+
+    skipfile["skiplist"] = cleaned_skiplist
 
     # fix formatting and create a commit for it
     with open(skipfile_name, "w") as output_yaml:
@@ -221,14 +227,20 @@ def run(raw_args=None):
 
     github_repo = g.get_repo(f"{username}/test-definitions")
 
+    # Base patch - base patch for PRs
+    base_patch = "origin/master"
+
     # If there are any formatting updates, make these
     if repo.index.diff("HEAD"):
         summary = "Skipfile formatting updates"
         message = "Clean up skipfile formatting."
         base = "master"
         head = f"formatting-update-{date_str}-{patch_count}"
+        base_patch = head
 
-        logger.debug([str(b.name) for b in github_repo.get_branches()])
+        logger.debug(
+            "branches:" + "\n".join([str(b.name) for b in github_repo.get_branches()])
+        )
 
         create_commit_push_pr(
             my_api_key,
@@ -245,21 +257,24 @@ def run(raw_args=None):
         # Increment the patch counter
         patch_count += 1
 
-    # Loop through and count the non-hangs
+    sha_info = ""
+    devices = set()
+
+    # fetch the SHA info
+    with open(args.sha_filename, "r") as file:
+        for line in file:
+            # for each non-empty line, filter SHAs
+            if line.strip():
+                reproducer_script_name, project, device, sha = line.strip().split(",")
+                sha_info += f"\n- {project}: {device}, SHA: {sha}"
+                devices.add(device)
+
+    test_dict = dict()
+    test_lookup = dict()
+
+    # loop through squad builds (one for each linux project tested)
     for build_name in squad_builds:
-        build_scores[build_name] = dict()
-        pass_counts = build_scores[build_name]
         logger.info(f"SQUAD build name {build_name}")
-        # fetch the SHA info
-        sha_info = ""
-        with open(args.sha_filename, "r") as file:
-            for line in file:
-                # for each non-empty line, filter SHAs
-                if line.strip():
-                    reproducer_script_name, device, sha = line.strip().split(",")
-                    if reproducer_script_name in build_name:
-                        sha_info += f"\n- {device}: {sha}"
-                        devices.append(device)
 
         if build_name != "":
             # Get the build whose name matches the build name from our list
@@ -270,22 +285,11 @@ def run(raw_args=None):
             for test in tests.values():
                 # We only care about the custom commands not boot
                 if "commands" in test.name:
-                    env = Environment(getid(test.environment))
                     testrun = TestRun(getid(test.test_run))
                     get_file(testrun.job_url + "/results")
                     reproducer = open("results", "r")
                     results_json = load(reproducer)
                     try:
-                        # gets the name of the custom command
-                        name = (
-                            results_json["lava"]["commands"]["repository"]["run"][
-                                "steps"
-                            ][0]
-                            .split(" ")[1]
-                            .strip()
-                        )
-                        # Gets the result if the test did not time out
-                        overall_result = results_json["commands"][name]["result"]
                         # Get names of tests run and split it into a list
                         tests = (
                             results_json["lava"]["commands"]["repository"]["run"][
@@ -302,110 +306,118 @@ def run(raw_args=None):
                         reproducer = Path("reproducer").read_text(encoding="utf-8")
                         device = findall("--device (\S+)", reproducer)[0]
                         tests_string = ",".join(sorted(tests))
-                        if tests_string in pass_counts:
-                            if device in pass_counts[tests_string]["count"]:
-                                pass_counts[tests_string]["count"][device] += 1
-                            else:
-                                pass_counts[tests_string]["count"][device] = 1
-                                pass_counts[tests_string]["test_list"] = tests
-                        else:
-                            pass_counts[tests_string] = dict()
-                            pass_counts[tests_string]["count"] = dict()
-                            pass_counts[tests_string]["count"][device] = 1
-                            pass_counts[tests_string]["test_list"] = tests
+                        # If this test isn't already in the test dict, add it
+                        if tests_string not in test_dict:
+                            test_dict[tests_string] = pd.DataFrame(
+                                0, index=devices, columns=squad_builds
+                            )
+                            test_lookup[tests_string] = sorted(tests)
+                        test_dict[tests_string].loc[device, build_name] += 1
+                        logger.debug(
+                            f"tests: {tests_string}, processing item: {device} {build_name} "
+                            + f"success count: {test_dict[tests_string].loc[device, build_name]}",
+                        )
 
-                    except KeyError:
-                        overall_result = "result not found - investigate"
+                    except KeyError as e:
+                        logger.error(e)
 
-                    # Get runtime
-                    try:
-                        time = results_json["lava"]["commands"]["duration"]
-                    except KeyError:
-                        time = "time not found"
-                    # Write results to CSV
-                    results_file.write(
-                        f"{test.short_name},{testrun.job_url},{env.slug},{time},{overall_result}\n"
-                    )
+    # Write results to file
+    for project, results_df in test_dict.items():
+        logger.debug(f"project: {project}")
+        logger.debug(test_dict[project])
+        results_df.to_csv(f"results-{project}.csv")
 
-                    logger.debug(f"Results saved to {results_file_name}")
+    for test_name, results in test_dict.items():
+        removed_devices = ""
+        new_skipitem = None
+        for device in devices:
+            if results.loc[device].eq(args.run_count).all():
+                logger.debug(
+                    f"Remove device {device} as test passed for all tested projects ({bool(results.loc[device].eq(args.run_count).all())})"
+                )
 
-    # loop through the builds/branches and decide what to remove
-    tests = ""
-    update = False
-    removed_devices = ""
-    for build_name, build_values in build_scores.items():
-        # test_name:
-        #     count: device: int
-        #     test_list: list
-        for test_name, test_values in build_values.items():
-            removed_devices = ""
-            for device in devices:
-                # If all tests passed on this device, remove device from skipfile
-                if (
-                    device in test_values["count"]
-                    and test_values["count"][device] == test_rerun_count
-                ):
-                    new_skiplist = []
-                    for skipitem in skipfile["skiplist"]:
-                        # search for entry
-                        tests = test_values["test_list"]
-                        # If the skipfile entry isn't a match, don't change it
-                        if set(tests).difference(set(skipitem["tests"])):
-                            new_skiplist.append(skipitem)
-                        # If the skipfile entry matches the tests, remove the board
-                        else:
-                            # remove device
+                new_skiplist = []
+                for skipitem in skipfile["skiplist"]:
+                    # search for entry
+                    tests = test_lookup[test_name]
+                    # If the skipfile entry isn't a match, don't change it
+                    if set(tests).difference(set(skipitem["tests"])):
+                        new_skiplist.append(skipitem)
+                    # If the skipfile entry matches the tests, remove the board
+                    else:
+                        # remove device
+                        if not new_skipitem:
                             new_skipitem = deepcopy(skipitem)
-                            if isinstance(new_skipitem["boards"], list):
-                                if device in new_skipitem["boards"]:
-                                    new_skipitem["boards"].remove(device)
-                                    removed_devices += f"\n- {device}"
-                                    update = True
-                                new_skiplist.append(new_skipitem)
+                        else:
+                            new_skipitem = deepcopy(new_skipitem)
 
-            # If there is an update to skipfile for current test
-            if update:
-                skipfile["skiplist"] = new_skiplist
+                        if isinstance(new_skipitem["boards"], list):
+                            if device in new_skipitem["boards"]:
+                                new_skipitem["boards"].remove(device)
+                                removed_devices += f"\n- {device}"
+                                logger.debug(
+                                    f"removing device {device} for {test_name}"
+                                )
 
-                # if there are changes, update skipfile
-                # Produce skipfile update
-                with open(skipfile_name, "w") as output_yaml:
-                    yaml.dump(skipfile, output_yaml)
+                                update = True
+                            new_skiplist.append(new_skipitem)
 
-                # make updates and create a commit for it
-                with open(skipfile_name, "w") as output_yaml:
-                    yaml.dump(skipfile, output_yaml)
+        # If there is an update to skipfile for current test
+        if update:
+            skipfile["skiplist"] = new_skiplist
 
-                repo.git.add(u=True)
-                tests_string = ",".join(tests)
-                tests_bulleted_string = "\n- " + "\n- ".join(tests)
+            # head name for update
+            head = f"skipfile-update-{date_str}-{patch_count}"
 
-                summary = f"automated: linux: ltp: skipfile: remove {tests_string}"
+            # Check out the base patch
+            repo.git.checkout(base_patch)
+            repo.git.branch(head)
+            repo.git.checkout(head)
 
-                message = (
-                    f"Updates to skipfile to remove:\n{tests_bulleted_string}\n\n"
-                    + f"Test were shown to pass/fail rather than hang do not need to be skipped.\n\n"
-                    + f"Remove for devices:\n{removed_devices}\n\n"
-                    + f"Tests run {test_rerun_count} time(s).\n\n"
-                    + f"Tested on:\n{sha_info}"
-                )
-                base = "master"
-                head = f"skipfile-update-{date_str}-{patch_count}"
+            # if there are changes, update skipfile
+            # Produce skipfile update
+            with open(skipfile_name, "w") as output_yaml:
+                yaml.dump(skipfile, output_yaml)
 
-                create_commit_push_pr(
-                    my_api_key,
-                    repo,
-                    github_repo,
-                    username,
-                    summary,
-                    message,
-                    base,
-                    head,
-                    args.github_push,
-                )
+            # make updates and create a commit for it
+            with open(skipfile_name, "w") as output_yaml:
+                yaml.dump(skipfile, output_yaml)
 
-                patch_count += 1
-                update = False
+            repo.git.add(u=True)
+
+            tests_string = ",".join(tests)
+            tests_bulleted_string = "\n- " + "\n- ".join(tests)
+
+            summary = f"automated: linux: ltp: skipfile: remove {tests_string}"
+
+            message = (
+                f"Updates to skipfile to remove:\n{tests_bulleted_string}\n\n"
+                + f"Test were shown to pass/fail rather than hang do not need to be skipped.\n\n"
+                + f"Remove for devices:\n{removed_devices}\n\n"
+                + f"Tests run {test_rerun_count} time(s) per device.\n\n"
+                + f"Tested on:\n{sha_info}"
+            )
+            # set base patch for PR
+            base = base_patch
+
+            create_commit_push_pr(
+                my_api_key,
+                repo,
+                github_repo,
+                username,
+                summary,
+                message,
+                base,
+                head,
+                args.github_push,
+            )
+
+            patch_count += 1
+            update = False
+            new_skipitem = None
+            # Log commit to file
+            with open(f"{head}.diff", "w") as file:
+                file.write(f"{summary}\n{message}\n{repo.index.diff('HEAD~1')}")
 
     return 0
 
