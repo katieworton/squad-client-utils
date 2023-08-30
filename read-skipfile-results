@@ -345,31 +345,28 @@ def run(raw_args=None):
             if set(tests).difference(set(skipitem["tests"])):
                 new_skiplist.append(skipitem)
             else:
+                # Set up new skipitem if it doesn't exist
+                if not new_skipitem:
+                    new_skipitem = deepcopy(skipitem)
+                else:
+                    new_skipitem = deepcopy(new_skipitem)
                 # Check each device for the test once found
                 for device in devices:
-                    # Set up new skipitem if it doesn't exist
-                    if not new_skipitem:
-                        new_skipitem = deepcopy(skipitem)
-                    else:
-                        new_skipitem = deepcopy(new_skipitem)
-
-                    if results.loc[device].eq(args.run_count).all():
+                    if (
+                        device in new_skipitem["boards"]
+                        and results.loc[device].eq(args.run_count).all()
+                    ):
                         logger.debug(
                             f"Remove device {device} as test passed for all tested projects ({bool(results.loc[device].eq(args.run_count).all())})"
                         )
 
-                        # Remove board if it is there
-                        if isinstance(new_skipitem["boards"], list):
-                            if device in new_skipitem["boards"]:
-                                new_skipitem["boards"].remove(device)
-                                removed_devices += f"\n- {device}"
-                                logger.debug(
-                                    f"removing device {device} for {test_name}"
-                                )
+                        new_skipitem["boards"].remove(device)
+                        removed_devices += f"\n- {device}"
+                        logger.debug(f"removing device {device} for {test_name}")
 
-                                update = True
+                        update = True
 
-                    new_skiplist.append(new_skipitem)
+                new_skiplist.append(new_skipitem)
 
         # If there is an update to skipfile for current test
         if update:
@@ -423,7 +420,7 @@ def run(raw_args=None):
             new_skipitem = None
             # Log commit to file
             with open(f"{head}.diff", "w") as file:
-                diff = popen("git diff HEAD~1").read()
+                diff = popen(f"git diff {base} {head}").read()
                 file.write(f"{summary}\n{message}\n{diff}")
 
     return 0
