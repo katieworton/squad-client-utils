@@ -141,10 +141,10 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
-        "--sha-filename",
+        "--metadata-filename",
         required=False,
-        default="sha_list.csv",
-        help="Name for the file containing the build SHA.",
+        default="metadata_filename.csv",
+        help="Name for the file containing extra info about the builds.",
     )
 
     parser.add_argument(
@@ -225,7 +225,7 @@ def run(raw_args=None):
         tmp_custom_reproducer_filename = reproducer_script_name + "_tmp_reproducer"
         for device in args.device_names:
             try:
-                fetched_reproducer, sha = get_reproducer(
+                fetched_reproducer, git_desc = get_reproducer(
                     args.group,
                     project,
                     device,
@@ -237,8 +237,10 @@ def run(raw_args=None):
                     args.allow_unfinished,
                     local=args.local,
                 )
-                with open(args.sha_filename, "a+") as file:
-                    file.write(f"{reproducer_script_name},{project},{device},{sha}\n")
+                with open(args.metadata_filename, "a+") as file:
+                    file.write(
+                        f"{reproducer_script_name},{project},{device},{git_desc}\n"
+                    )
             except ReproducerNotFound:
                 logger.error(
                     f"No reproducer could be found for {args.group} {project} {device} {args.build_names}"
