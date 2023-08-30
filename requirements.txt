@@ -1,1 +1,7 @@
-squad_client
+GitPython
+pandas
+PyGithub
+python-git
+ruamel.YAML
+squad-client
+tuxsuite
