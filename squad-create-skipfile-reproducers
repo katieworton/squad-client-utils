@@ -238,7 +238,7 @@ def run(raw_args=None):
                     local=args.local,
                 )
                 with open(args.sha_filename, "a+") as file:
-                    file.write(f"{reproducer_script_name},{device},{sha}\n")
+                    file.write(f"{reproducer_script_name},{project},{device},{sha}\n")
             except ReproducerNotFound:
                 logger.error(
                     f"No reproducer could be found for {args.group} {project} {device} {args.build_names}"
