@@ -85,10 +85,10 @@ def parse_args(raw_args):
     )
 
     parser.add_argument(
-        "--sha-filename",
+        "--metadata-filename",
         required=False,
-        default="sha_list.csv",
-        help="Name for the file containing the build SHA.",
+        default="metadata_list.csv",
+        help="Name for the file containing the build info.",
     )
 
     parser.add_argument(
@@ -195,8 +195,8 @@ def run(raw_args=None):
 
     repo = Repo(args.repo_path)
 
-    # Move SHA file to test-definitions for easier access
-    rename(args.sha_filename, f"{args.repo_path}/{args.sha_filename}")
+    # Move metadata file to test-definitions for easier access
+    rename(args.metadata_filename, f"{args.repo_path}/{args.metadata_filename}")
     chdir(args.repo_path)
 
     # Any hangs will not produce a result - so the results file will contain
@@ -259,18 +259,21 @@ def run(raw_args=None):
         # Update the text version of skipfile
         skipfile_txt = Path(skipfile_name).read_text()
 
-    sha_info = ""
+    run_info = ""
     devices = set()
 
-    # fetch the SHA info
-    with open(args.sha_filename, "r") as file:
+    # fetch the run info
+    with open(args.metadata_filename, "r") as file:
         for line in file:
-            # for each non-empty line, filter SHAs
+            # for each non-empty line
             if line.strip():
-                reproducer_script_name, run_project, device, sha = line.strip().split(
-                    ","
-                )
-                sha_info += f"\n- {run_project}: {device}, SHA: {sha}"
+                (
+                    reproducer_script_name,
+                    run_project,
+                    device,
+                    git_desc,
+                ) = line.strip().split(",")
+                run_info += f"\n- {run_project}: {device}, git desc: {git_desc}"
                 devices.add(device)
 
     test_dict = dict()
@@ -398,7 +401,7 @@ def run(raw_args=None):
                 + f"Test were shown to pass/fail rather than hang do not need to be skipped.\n\n"
                 + f"Remove for devices:\n{removed_devices}\n\n"
                 + f"Tests run {test_rerun_count} time(s) per device.\n\n"
-                + f"Tested on:\n{sha_info}"
+                + f"Tested on:\n{run_info}"
             )
             # set base patch for PR
             base = base_patch
