@@ -336,3 +336,21 @@ jobs:
         print(f"plan file updated: {plan_name}")
 
     return plan_txt
+
+
+def wait_for_builds(project, squad_build_list):
+    squad_build_list_copy = squad_build_list[:]
+    index = 0
+    while squad_build_list_copy:
+        # Fetch build data by name
+        build_name = squad_build_list_copy[index]
+        build = first(project.builds(version=build_name))
+
+        # See if build finished
+        if build.finished:
+            squad_build_list_copy.remove(build_name)
+            if not squad_build_list_copy:
+                return 0
+        else:
+            index += 1
+        index = index % len(squad_build_list_copy)
