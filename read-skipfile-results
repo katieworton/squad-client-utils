@@ -23,7 +23,7 @@ from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad, TestRun
 from squad_client.utils import first, getid
 
-from squadutilslib import get_file
+from squadutilslib import get_file, wait_for_builds
 
 
 def parse_args(raw_args):
@@ -180,6 +180,8 @@ def run(raw_args=None):
 
     builds_list_file = open(builds, "r")
     squad_builds = [build_name.strip() for build_name in builds_list_file.readlines()]
+
+    wait_for_builds(project, squad_builds)
 
     skipfile_name = args.skipfile
 
