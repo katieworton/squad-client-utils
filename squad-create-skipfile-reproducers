@@ -22,6 +22,7 @@ from squadutilslib import (
     create_custom_reproducer,
     create_ltp_custom_command,
     create_tuxsuite_plan_from_tuxsuite_tests,
+    generate_command_name_from_list,
     get_file,
     get_projects,
     get_reproducer,
@@ -242,12 +243,14 @@ def run(raw_args=None):
             for reason in reason_list:
                 if project in reason["projects"]:
                     custom_command = create_ltp_custom_command(tests=reason["tests"])
+                    command_name = generate_command_name_from_list(reason["tests"])
                     reproducer = create_custom_reproducer(
                         fetched_reproducer,
                         args.suite_name,
                         custom_command,
                         tmp_custom_reproducer_filename,
                         local=args.local,
+                        command_name=command_name,
                     )
                     if not Path(reproducer_script_name).exists():
                         reproducer_scripts.append(reproducer_script_name)
