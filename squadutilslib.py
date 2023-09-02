@@ -16,6 +16,7 @@ from requests import HTTPError, get
 from squad_client.core.models import Build, Squad, TestRun
 from squad_client.shortcuts import download_tests
 from squad_client.utils import first, getid
+from tuxrun.utils import slugify
 from yaml import FullLoader, dump, load
 
 basicConfig(level=INFO)
@@ -209,6 +210,19 @@ def get_reproducer(
         )
     else:
         raise ReproducerNotFound
+
+
+def generate_command_name_from_list(name_list):
+    """
+    If there is a list of tests to run, this function will sort these tests
+    alphabetically, turn the list into a string and then remove any characters
+    non-alphanumeric characters that would be dropped from the test name.
+    """
+    sorted_list = sorted(name_list)
+
+    command_name = slugify("-".join(sorted_list))
+
+    return command_name
 
 
 def create_custom_reproducer(
