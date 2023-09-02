@@ -236,7 +236,7 @@ def create_custom_reproducer(reproducer, suite, custom_commands, filename, local
                 build_cmdline = path.join(
                     build_cmdline
                     + line.strip()
-                    + f''' --commands "'{custom_commands}'"'''
+                    + f''' --parameters command-name="{custom_commands}" --commands "'{custom_commands}'"'''
                 ).strip()
 
     reproducer_list = f"""#!/bin/bash\n{build_cmdline}"""
@@ -282,7 +282,6 @@ def tuxtest_to_tuxplan_entry(tuxsuite_test):
             elif key == "commands":
                 value = sub(r"""['"]+""", r"", value)
                 dict_entry[key] = [value]
-                dict_entry["command_name"] = value
             elif key == "overlay":
                 dict_entry[key] = [value]
             else:
