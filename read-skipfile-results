@@ -9,21 +9,19 @@
 from argparse import ArgumentParser
 from copy import deepcopy
 from datetime import datetime
-from json import load
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import chdir, environ, getenv, path, popen, rename
 from pathlib import Path
-from re import findall, sub
 
 import pandas as pd
 from git import Repo
 from github import Github
 from ruamel.yaml import YAML
 from squad_client.core.api import SquadApi
-from squad_client.core.models import Squad, TestRun
+from squad_client.core.models import Environment, Squad, TestRun
 from squad_client.utils import first, getid
 
-from squadutilslib import get_file, wait_for_builds
+from squadutilslib import generate_command_name_from_list, wait_for_builds
 
 
 def parse_args(raw_args):
@@ -278,7 +276,6 @@ def run(raw_args=None):
                 devices.add(device)
 
     test_dict = dict()
-    test_lookup = dict()
 
     # loop through squad builds (one for each linux project tested)
     for build_name in squad_builds:
@@ -293,33 +290,15 @@ def run(raw_args=None):
             for test in tests.values():
                 # We only care about the custom commands not boot
                 if "commands" in test.name:
-                    testrun = TestRun(getid(test.test_run))
-                    get_file(testrun.job_url + "/results")
-                    reproducer = open("results", "r")
-                    results_json = load(reproducer)
                     try:
-                        # Get names of tests run and split it into a list
-                        tests = (
-                            results_json["lava"]["commands"]["repository"]["run"][
-                                "steps"
-                            ][0]
-                            .split("cd /opt/ltp && ./runltp -s ")[1]
-                            .strip()
-                        )
-                        tests = sub("'", "", tests)
-                        tests = sub('"', "", tests).split(" ")
-
-                        # get device type from reproducer
-                        get_file(testrun.job_url + "/reproducer")
-                        reproducer = Path("reproducer").read_text(encoding="utf-8")
-                        device = findall("--device (\S+)", reproducer)[0]
-                        tests_string = ",".join(sorted(tests))
+                        # get device type
+                        device = Environment(getid(test)).slug
+                        tests_string = test.short_name
                         # If this test isn't already in the test dict, add it
                         if tests_string not in test_dict:
                             test_dict[tests_string] = pd.DataFrame(
                                 0, index=list(devices), columns=squad_builds
                             )
-                            test_lookup[tests_string] = sorted(tests)
                         test_dict[tests_string].loc[device, build_name] += 1
                         logger.debug(
                             f"tests: {tests_string}, processing item: {device} {build_name} "
@@ -342,11 +321,8 @@ def run(raw_args=None):
         skipfile = yaml.load(skipfile_txt)
         new_skiplist = []
         for skipitem in skipfile["skiplist"]:
-            # search for entry
-            tests = test_lookup[test_name]
-
             # If the skipfile entry isn't a match, don't change it
-            if set(tests).difference(set(skipitem["tests"])):
+            if generate_command_name_from_list(skipitem["tests"]) != test_name:
                 new_skiplist.append(skipitem)
             else:
                 # Set up new skipitem if it doesn't exist
