@@ -211,12 +211,17 @@ def get_reproducer(
         raise ReproducerNotFound
 
 
-def create_custom_reproducer(reproducer, suite, custom_commands, filename, local=False):
+def create_custom_reproducer(
+    reproducer, suite, custom_commands, filename, local=False, command_name=None
+):
     """
     Given an existing TuxRun or TuxTest reproducer, edit this reproducer to run
     a given custom command.
     """
     build_cmdline = ""
+
+    if not command_name:
+        command_name = custom_commands
 
     for line in reproducer.split("\n"):
         if ("tuxsuite test submit" in line and not local) or (
@@ -236,7 +241,7 @@ def create_custom_reproducer(reproducer, suite, custom_commands, filename, local
                 build_cmdline = path.join(
                     build_cmdline
                     + line.strip()
-                    + f''' --parameters command-name="{custom_commands}" --commands "'{custom_commands}'"'''
+                    + f''' --parameters command-name={command_name} --commands "'{custom_commands}'"'''
                 ).strip()
 
     reproducer_list = f"""#!/bin/bash\n{build_cmdline}"""
