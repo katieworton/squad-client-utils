@@ -292,7 +292,7 @@ def run(raw_args=None):
                 if "commands" in test.name:
                     try:
                         # get device type
-                        device = Environment(getid(test)).slug
+                        device = Environment(getid(test.environment)).slug
                         tests_string = test.short_name
                         # If this test isn't already in the test dict, add it
                         if tests_string not in test_dict:
