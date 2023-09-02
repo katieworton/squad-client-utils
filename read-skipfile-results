@@ -276,6 +276,7 @@ def run(raw_args=None):
                 devices.add(device)
 
     test_dict = dict()
+    test_lookup = dict()
 
     # loop through squad builds (one for each linux project tested)
     for build_name in squad_builds:
@@ -314,6 +315,9 @@ def run(raw_args=None):
         logger.debug(test_dict[project])
         results_df.to_csv(f"results-{project}.csv")
 
+    # tests to be removed
+    tests_to_remove = None
+
     for test_name, results in test_dict.items():
         removed_devices = ""
         new_skipitem = None
@@ -325,6 +329,8 @@ def run(raw_args=None):
             if generate_command_name_from_list(skipitem["tests"]) != test_name:
                 new_skiplist.append(skipitem)
             else:
+                tests_to_remove = skipitem["tests"]
+
                 # Set up new skipitem if it doesn't exist
                 if not new_skipitem:
                     new_skipitem = deepcopy(skipitem)
@@ -368,8 +374,8 @@ def run(raw_args=None):
 
             repo.git.add(u=True)
 
-            tests_string = ",".join(tests)
-            tests_bulleted_string = "\n- " + "\n- ".join(tests)
+            tests_string = ",".join(tests_to_remove)
+            tests_bulleted_string = "\n- " + "\n- ".join(tests_to_remove)
 
             summary = f"automated: linux: ltp: skipfile: remove {tests_string}"
 
