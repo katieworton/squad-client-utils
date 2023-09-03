@@ -290,23 +290,19 @@ def run(raw_args=None):
             for test in tests.values():
                 # We only care about the custom commands not boot
                 if "commands" in test.name:
-                    try:
-                        # get device type
-                        device = Environment(getid(test.environment)).slug
-                        tests_string = test.short_name
-                        # If this test isn't already in the test dict, add it
-                        if tests_string not in test_dict:
-                            test_dict[tests_string] = pd.DataFrame(
-                                0, index=list(devices), columns=squad_builds
-                            )
-                        test_dict[tests_string].loc[device, build_name] += 1
-                        logger.debug(
-                            f"tests: {tests_string}, processing item: {device} {build_name} "
-                            + f"success count: {test_dict[tests_string].loc[device, build_name]}",
+                    # get device type
+                    device = Environment(getid(test.environment)).slug
+                    tests_string = test.short_name
+                    # If this test isn't already in the test dict, add it
+                    if tests_string not in test_dict:
+                        test_dict[tests_string] = pd.DataFrame(
+                            0, index=list(devices), columns=squad_builds
                         )
-
-                    except KeyError as e:
-                        logger.error(e)
+                    test_dict[tests_string].loc[device, build_name] += 1
+                    logger.debug(
+                        f"tests: {tests_string}, processing item: {device} {build_name} "
+                        + f"success count: {test_dict[tests_string].loc[device, build_name]}",
+                    )
 
     # Write results to file
     for project, results_df in test_dict.items():
