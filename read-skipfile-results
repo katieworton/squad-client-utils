@@ -128,37 +128,26 @@ def create_commit(repo, summary, message):
     )
 
 
-def create_commit_push_pr(
-    token, local_repo, github_repo, username, summary, message, base, head, push=True
-):
-    if len(summary) > 50:
-        # Truncate the commit summary to < 50 characters for git commit
-        truncated_summary = summary[:47] + "..."
-    else:
-        truncated_summary = summary
-
-    create_commit(local_repo, truncated_summary, message)
-
+def push_pr(token, local_repo, github_repo, username, summary, message, base, head):
     local_repo.create_head(head)
 
-    if push:
-        local_repo.git.push(
-            f"https://{token}@github.com/{username}/test-definitions",
-            f"{head}",
-            "-f",
-        )
-        logger.debug(f"Pushed to {head}")
+    local_repo.git.push(
+        f"https://{token}@github.com/{username}/test-definitions",
+        f"{head}",
+        "-f",
+    )
+    logger.debug(f"Pushed to {head}")
 
-        title = f"[automated] {summary}"
-        body = f"""[automated] {message}"""
+    title = f"[automated] {summary}"
+    body = f"""[automated] {message}"""
 
-        pr = github_repo.create_pull(
-            title=title,
-            body=body,
-            head=head,
-            base=base,
-        )
-        logger.debug(f"PR created {pr}")
+    pr = github_repo.create_pull(
+        title=title,
+        body=body,
+        head=head,
+        base=base,
+    )
+    logger.debug(f"PR created {pr}")
 
 
 def run(raw_args=None):
@@ -241,17 +230,25 @@ def run(raw_args=None):
             "branches:" + "\n".join([str(b.name) for b in github_repo.get_branches()])
         )
 
-        create_commit_push_pr(
-            my_api_key,
-            repo,
-            github_repo,
-            username,
-            summary,
-            message,
-            base,
-            head,
-            args.github_push,
-        )
+        if len(summary) > 50:
+            # Truncate the commit summary to < 50 characters for git commit
+            truncated_summary = summary[:47] + "..."
+        else:
+            truncated_summary = summary
+
+        create_commit(repo, truncated_summary, message)
+
+        if args.github_push:
+            push_pr(
+                my_api_key,
+                repo,
+                github_repo,
+                username,
+                summary,
+                message,
+                base,
+                head,
+            )
 
         # Increment the patch counter
         patch_count += 1
@@ -276,6 +273,7 @@ def run(raw_args=None):
                 devices.add(device)
 
     test_dict = dict()
+    squad_build_urls = "\n\nSQUAD build URLs:"
 
     # loop through squad builds (one for each linux project tested)
     for build_name in squad_builds:
@@ -284,6 +282,7 @@ def run(raw_args=None):
         if build_name != "":
             # Get the build whose name matches the build name from our list
             build = first(project.builds(version=build_name))
+            squad_build_urls += f"\n- {build.url}"
             # Look at the tests for that build
             tests = build.tests()
             # Check each of the tests
@@ -305,10 +304,10 @@ def run(raw_args=None):
                     )
 
     # Write results to file
-    for project, results_df in test_dict.items():
-        logger.debug(f"project: {project}")
-        logger.debug(test_dict[project])
-        results_df.to_csv(f"results-{project}.csv")
+    for test, results_df in test_dict.items():
+        logger.debug(f"test: {test}")
+        logger.debug(test_dict[test])
+        results_df.to_csv(f"results-{test}.csv")
 
     # tests to be removed
     tests_to_remove = None
@@ -384,17 +383,28 @@ def run(raw_args=None):
             # set base patch for PR
             base = base_patch
 
-            create_commit_push_pr(
-                my_api_key,
-                repo,
-                github_repo,
-                username,
-                summary,
-                message,
-                base,
-                head,
-                args.github_push,
-            )
+            if len(summary) > 50:
+                # Truncate the commit summary to < 50 characters for git commit
+                truncated_summary = summary[:47] + "..."
+            else:
+                truncated_summary = summary
+
+            create_commit(repo, truncated_summary, message)
+
+            logger.debug(summary)
+            logger.debug(message + squad_build_urls)
+
+            if args.github_push:
+                push_pr(
+                    my_api_key,
+                    repo,
+                    github_repo,
+                    username,
+                    summary,
+                    message + squad_build_urls,
+                    base,
+                    head,
+                )
 
             patch_count += 1
             update = False
