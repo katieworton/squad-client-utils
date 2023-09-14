@@ -268,8 +268,9 @@ def run(raw_args=None):
                     run_project,
                     device,
                     git_desc,
+                    build_name,
                 ) = line.strip().split(",")
-                run_info += f"\n- {run_project}: {device}, git desc: {git_desc}"
+                run_info += f"\n- {run_project}: {device}, git desc: {git_desc}, build_name: {build_name}"
                 devices.add(device)
 
     test_dict = dict()
