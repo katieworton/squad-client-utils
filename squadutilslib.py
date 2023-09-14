@@ -11,6 +11,7 @@ from logging import DEBUG, INFO, basicConfig, getLogger
 from os import path, remove
 from pathlib import Path
 from re import findall, match, search, sub
+from time import sleep
 
 from requests import HTTPError, get
 from squad_client.core.models import Build, Squad, TestRun
@@ -353,4 +354,7 @@ def wait_for_builds(project, squad_build_list):
                 return 0
         else:
             index += 1
+            # If we are still waiting for things to finish, sleep so we don't
+            # spam the SQUAD server
+            sleep(10)
         index = index % len(squad_build_list_copy)
