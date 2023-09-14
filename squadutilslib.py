@@ -208,6 +208,7 @@ def get_reproducer(
         return (
             Path(reproducer).read_text(encoding="utf-8"),
             Build(getid(testrun.build)).metadata.git_describe,
+            testrun.metadata.build_name,
         )
     else:
         raise ReproducerNotFound
