@@ -12,6 +12,7 @@ from datetime import datetime
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import chdir, environ, getenv, path, popen, rename
 from pathlib import Path
+from re import search
 
 import pandas as pd
 from git import Repo
@@ -283,7 +284,9 @@ def run(raw_args=None):
         if build_name != "":
             # Get the build whose name matches the build name from our list
             build = first(project.builds(version=build_name))
-            squad_build_urls += f"\n- {build.url}"
+            project_match = search(".*-(linux-.*)-plan.*", build_name)
+            project_name = project_match.group(1)
+            squad_build_urls += f"\n- {project_name}: {build.url}"
             # Look at the tests for that build
             tests = build.tests()
             # Check each of the tests
