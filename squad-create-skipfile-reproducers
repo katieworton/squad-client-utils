@@ -226,7 +226,7 @@ def run(raw_args=None):
         tmp_custom_reproducer_filename = reproducer_script_name + "_tmp_reproducer"
         for device in args.device_names:
             try:
-                fetched_reproducer, git_desc = get_reproducer(
+                fetched_reproducer, git_desc, build_name = get_reproducer(
                     args.group,
                     project,
                     device,
@@ -240,7 +240,7 @@ def run(raw_args=None):
                 )
                 with open(args.metadata_filename, "a+") as file:
                     file.write(
-                        f"{reproducer_script_name},{project},{device},{git_desc}\n"
+                        f"{reproducer_script_name},{project},{device},{git_desc},{build_name}\n"
                     )
             except ReproducerNotFound:
                 logger.error(
