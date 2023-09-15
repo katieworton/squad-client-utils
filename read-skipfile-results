@@ -316,6 +316,8 @@ def run(raw_args=None):
     # tests to be removed
     tests_to_remove = None
 
+    update = None
+
     for test_name, results in test_dict.items():
         removed_devices = ""
         new_skipitem = None
