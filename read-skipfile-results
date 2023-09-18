@@ -13,6 +13,7 @@ from logging import DEBUG, INFO, basicConfig, getLogger
 from os import chdir, environ, getenv, path, popen, rename
 from pathlib import Path
 from re import search
+from time import sleep
 
 import pandas as pd
 from git import Repo
@@ -356,6 +357,8 @@ def run(raw_args=None):
 
         # If there is an update to skipfile for current test
         if update:
+            # Sleep before pushing again to prevent spamming Github
+            sleep(30)
             # head name for update
             head = f"skipfile-update-{date_str}-{patch_count}"
 
