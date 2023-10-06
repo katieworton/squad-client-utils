@@ -116,7 +116,7 @@ def run(raw_args=None):
     args = parse_args(raw_args)
 
     try:
-        reproducer = get_reproducer(
+        reproducer, git_desc = get_reproducer(
             args.group,
             args.project,
             args.device_name,
