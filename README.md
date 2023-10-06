@@ -247,12 +247,13 @@ usage: squad-create-skipfile-reproducers [-h] --group GROUP [--allow-unfinished]
                                          [--device-names DEVICE_NAMES [DEVICE_NAMES ...]]
                                          [--local] [--project-age PROJECT_AGE]
                                          [--project-regex PROJECT_REGEX]
+                                         [--metadata-filename METADATA_FILENAME]
                                          [--skipfile-url SKIPFILE_URL]
                                          [--suite-name SUITE_NAME]
 
 Produce TuxRun or TuxPlan reproducers for the LTP skipfile.
 
-options:
+optional arguments:
   -h, --help            show this help message and exit
   --group GROUP         The name of the SQUAD group.
   --allow-unfinished    Allow fetching of reproducers where the build is marked as
@@ -271,6 +272,8 @@ options:
                         Project age in days.
   --project-regex PROJECT_REGEX
                         Regex pattern for project names.
+  --metadata-filename METADATA_FILENAME
+                        Name for the file containing extra info about the builds.
   --skipfile-url SKIPFILE_URL
                         URL of the skipfile to test.
   --suite-name SUITE_NAME
