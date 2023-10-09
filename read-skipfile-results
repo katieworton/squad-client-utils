@@ -218,7 +218,7 @@ def run(raw_args=None):
     github_repo = g.get_repo(f"{username}/{repo_name}")
 
     # Base patch - base patch for PRs
-    base_patch = "origin/master"
+    base_patch = "master"
 
     # If there are any formatting updates, make these
     if repo.index.diff("HEAD"):
