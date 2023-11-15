@@ -58,32 +58,18 @@ def get_file(path, filename=None):
         raise Exception(f"Path {path} not found")
 
 
-def get_reproducer_from_testrun(testrun_id, filename, plan=False, local=False):
+def get_reproducer_from_testrun(testrun_id, filename, local=False):
     """Given a testrun, download its reproducer."""
     testrun = TestRun(testrun_id)
-    is_test_reproducer = None
     reproducer = None
-
-    if local and plan:
-        logger.error("Error: not valid to request both plan=True and local=True.")
-        raise ReproducerNotFound
 
     # If there is a download_url try to treat it as a build
     if testrun.metadata.download_url:
         try:
+            download_file = testrun.metadata.download_url + "/tux_plan.yaml"
             if local:
-                reproducer_file = get_file(
-                    testrun.metadata.download_url + "/tuxmake_reproducer.sh", filename
-                )
-            elif plan:
-                reproducer_file = get_file(
-                    testrun.metadata.download_url + "/tux_plan.yaml", filename
-                )
-            else:
-                reproducer_file = get_file(
-                    testrun.metadata.download_url + "/tuxsuite_reproducer.sh", filename
-                )
-            is_test_reproducer = False
+                download_file = testrun.metadata.download_url + "/tuxmake_reproducer.sh"
+            reproducer_file = get_file(download_file, filename)
             with open(reproducer_file) as f:
                 reproducer = f.read()
         except HTTPError:
@@ -92,26 +78,17 @@ def get_reproducer_from_testrun(testrun_id, filename, plan=False, local=False):
     if not reproducer:
         # If no build reproducer was found, treat it as a test
         try:
+            download_file = testrun.metadata.job_url + "/tux_plan"
             if local:
-                reproducer_file = get_file(
-                    testrun.metadata.job_url + "/reproducer", filename
-                )
-            elif plan:
-                reproducer_file = get_file(
-                    testrun.metadata.job_url + "/tux_plan", filename
-                )
-            else:
-                reproducer_file = get_file(
-                    testrun.metadata.job_url + "/tuxsuite_reproducer", filename
-                )
-            is_test_reproducer = True
+                download_file = testrun.metadata.job_url + "/reproducer"
+            reproducer_file = get_file(download_file, filename)
             with open(reproducer_file) as f:
                 reproducer = f.read()
         except HTTPError:
             logger.error("No build or test reproducer found.")
             raise ReproducerNotFound
 
-    return reproducer, is_test_reproducer
+    return reproducer
 
 
 def filter_projects(projects, pattern):
@@ -249,7 +226,7 @@ def get_reproducer(
         # In theory there should only be one of those
         logger.debug(f"Testrun id: {testrun.id}")
 
-        reproducer, is_test_reproducer = get_reproducer_from_testrun(
+        reproducer = get_reproducer_from_testrun(
             testrun_id=testrun.id, filename=filename, plan=False, local=local
         )
         return (
