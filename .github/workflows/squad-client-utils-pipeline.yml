@@ -27,4 +27,4 @@ jobs:
 
       - name: flake8
         run: |
-         flake8 --exclude=dist/ --ignore=E501,W503 .
+         flake8 --exclude=dist/ --ignore=E501,W503 . squad-*
