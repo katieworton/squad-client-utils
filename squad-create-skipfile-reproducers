@@ -178,7 +178,7 @@ def run(raw_args=None):
     if not args.projects:
         args.projects = project_list
     if not args.build_names:
-        args.build_names = ["gcc-12-lkftconfig", "gcc-\d\d-lkftconfig"]
+        args.build_names = ["gcc-12-lkftconfig", r"gcc-\d\d-lkftconfig"]
 
     skipfile = get_file(args.skipfile_url)
 

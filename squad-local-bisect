@@ -16,12 +16,11 @@ import requests
 from pathlib import Path
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad, Build, TestRun
-from squad_client.shortcuts import download_tests as download
 from squad_client.shortcuts import get_build
 from squad_client.utils import getid, first
 
 squad_host_url = "https://qa-reports.linaro.org/"
-SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST",squad_host_url))
+SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", squad_host_url))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -41,6 +40,7 @@ def get_file(path):
     else:
         raise Exception(f"Path {path} not found")
 
+
 def find_good_build(base_build, project, environment, build_name, suite_name, test_name):
     builds = project.builds(id__lt=base_build.id, ordering="-id", count=10).values()
     for build in builds:
@@ -51,7 +51,7 @@ def find_good_build(base_build, project, environment, build_name, suite_name, te
                 logger.debug(f"    - Yay, found it, now looking for a passing {suite_name}/{test_name}", flush=True)
                 candidate_test = first(testrun.tests(metadata__suite=suite_name, metadata__name=test_name))
                 if candidate_test is None:
-                    logger.debug(f"      - no test in here :(", flush=True)
+                    logger.debug("      - no test in here :(", flush=True)
                     continue
                 if candidate_test.result:
                     logger.debug("************** FOUND IT *************", flush=True)
@@ -175,10 +175,10 @@ def run():
         tuxrun = get_file(f"{testrun.job_url}/reproducer")
         for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
             if 'tuxrun --runtime' in line:
-                line = re.sub("--kernel \S+ ", "", line)
-                line = re.sub("--modules \S+ ", "", line)
+                line = re.sub(r"--kernel \S+ ", "", line)
+                line = re.sub(r"--modules \S+ ", "", line)
                 if suite_name in "boot" or "ltp-" in suite_name:
-                    line = re.sub("--tests \S+ ", "", line)
+                    line = re.sub(r"--tests \S+ ", "", line)
                 build_cmdline = os.path.join(build_cmdline + ' --results-hook "' + line.strip() + ' --tuxmake ./ --save-outputs --log-file -"').strip()
 
         if "ltp-" in suite_name:
@@ -204,5 +204,7 @@ fi
 
     print(f"{bisect_script}")
     print(f"file created: {filename}")
+
+
 if __name__ == "__main__":
     sys.exit(run())

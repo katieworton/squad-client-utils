@@ -5,7 +5,7 @@ import sys
 
 test = sys.argv[1]
 
-#r = requests.get("https://qa-reports.linaro.org/api/tests/?metadata__name=check-kernel-trace-e0326ec6bcf122a75aba40cd43b3ac96822afcfd226496ad51e8f3fb46fe1b6c")
+# r = requests.get("https://qa-reports.linaro.org/api/tests/?metadata__name=check-kernel-trace-e0326ec6bcf122a75aba40cd43b3ac96822afcfd226496ad51e8f3fb46fe1b6c")
 r = requests.get(f"https://qa-reports.linaro.org/api/tests/?metadata__name={test}")
 
 print(json.dumps(r.json(), indent=4))

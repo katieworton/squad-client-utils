@@ -5,13 +5,13 @@ import json
 import logging
 import sys
 from squad_client.core.api import SquadApi
-from squad_client.core.models import ALL, Squad
-from squad_client.utils import getid
+from squad_client.core.models import Squad
 
 SquadApi.configure(cache=3600, url="https://qa-reports.linaro.org/")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def arg_parser():
     parser = argparse.ArgumentParser(description="List all changes for a squad build, compared to a base build")
@@ -41,6 +41,7 @@ def arg_parser():
     )
 
     return parser
+
 
 def run():
     args = arg_parser().parse_args()
@@ -103,7 +104,8 @@ def run():
                     "change": "fix"
                 })
 
-    print(json.dumps(flat,indent=2))
+    print(json.dumps(flat, indent=2))
+
 
 if __name__ == "__main__":
     sys.exit(run())

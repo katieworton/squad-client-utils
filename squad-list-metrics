@@ -13,6 +13,7 @@ SquadApi.configure(cache=3600, url="https://qa-reports.linaro.org/")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def arg_parser():
     parser = argparse.ArgumentParser(description="List all of the metrics for a squad build")
 
@@ -36,6 +37,7 @@ def arg_parser():
 
     return parser
 
+
 def run():
     args = arg_parser().parse_args()
 
@@ -56,23 +58,23 @@ def run():
 
     environments = project.environments(count=ALL, ordering="slug")
     if not environments:
-        logger.error(f"Get environments failed. No environments found.")
+        logger.error("Get environments failed. No environments found.")
         return -1
 
     suites = project.suites(count=ALL, ordering="slug")
     if not suites:
-        logger.error(f"Get suites failed. No suites found.")
+        logger.error("Get suites failed. No suites found.")
         return -1
 
     filters = {
         "metadata__suite": "build",
     }
-    metrics=sorted(build.metrics(count=ALL, **filters).values(), key=lambda m: m.short_name)
+    metrics = sorted(build.metrics(count=ALL, **filters).values(), key=lambda m: m.short_name)
     if not metrics:
-        logger.error(f"Get metrics failed. No metrics found.")
+        logger.error("Get metrics failed. No metrics found.")
         return -1
 
-    flat=[]
+    flat = []
     for metric in metrics:
         flat.append({
             "id": metric.id,
@@ -86,6 +88,7 @@ def run():
         })
 
     print(json.dumps(flat, indent=2))
+
 
 if __name__ == "__main__":
     sys.exit(run())

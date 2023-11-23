@@ -9,14 +9,10 @@
 
 import argparse
 import fnmatch
-import json
 import logging
 import os
-import re
 import sys
 import yaml
-import pprint
-import subprocess as sp
 from urllib import request
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad
@@ -24,10 +20,11 @@ from squad_client.shortcuts import download_tests as download
 from squad_client.shortcuts import get_build
 
 squad_host_url = "https://qa-reports.linaro.org/"
-SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST",squad_host_url))
+SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", squad_host_url))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Compare builds within SQUAD")
@@ -61,6 +58,7 @@ def parse_args():
 
     return parser.parse_args()
 
+
 def download_tests(project, build, environments, suites, output_filename):
     download(project, build, environments, suites, "{test.environment.slug}/{test.test_run.metadata.build_name}/{test.name} {test.status}", output_filename,)
 
@@ -84,7 +82,7 @@ def run():
         for tmp in issues["projects"][0]["known_issues"]:
             environments = []
             projects = []
-            for key,value in tmp.items():
+            for key, value in tmp.items():
                 if 'environments' in tmp.keys():
                     environments = tmp["environments"]
                 else:
@@ -157,9 +155,9 @@ def run():
                 match = True
                 break
         if match:
-            line += f"X | "
+            line += "X | "
         else:
-            line += f"  | "
+            line += "  | "
 
         line += f"{test_name}"
         if use_line:
@@ -175,13 +173,13 @@ def run():
             table_filename += f'{file}'
             first = False
             report = f'Base file: {file}\n'
-            headings = f'base file'
+            headings = 'base file'
         else:
             table_filename += f'-vs-{file}'
             report += f'file {files.index(file)}: {file}\n'
             headings += f' | file {files.index(file)}'
     report += f'\n{headings} | known-issue | test_name\n'
-    report += f'-------------------------------------------------------\n'
+    report += '-------------------------------------------------------\n'
 
     table_filename += '.txt'
     report += f"""
@@ -193,6 +191,7 @@ def run():
         fp.write(report)
 
     print(report)
+
 
 if __name__ == "__main__":
     sys.exit(run())

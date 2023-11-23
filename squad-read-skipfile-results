@@ -10,7 +10,7 @@ from argparse import ArgumentParser
 from copy import deepcopy
 from datetime import datetime
 from logging import DEBUG, INFO, basicConfig, getLogger
-from os import chdir, environ, getenv, path, popen, rename
+from os import chdir, environ, getenv, path, popen
 from pathlib import Path
 from re import search
 from shutil import copy
@@ -385,7 +385,7 @@ def run(raw_args=None):
 
             message = (
                 f"Updates to skipfile to remove:\n{tests_bulleted_string}\n\n"
-                + f"Tests did not hang so do not need to be skipped.\n\n"
+                + "Tests did not hang so do not need to be skipped.\n\n"
                 + f"Remove for devices:\n{removed_devices}\n\n"
                 + f"Tests run {test_rerun_count} time(s) per device.\n\n"
                 + f"Tested on:\n{run_info}"

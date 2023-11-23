@@ -10,7 +10,6 @@
 from argparse import ArgumentParser
 from logging import INFO, basicConfig, getLogger
 from os import chmod, getenv
-from pathlib import Path
 from stat import S_IRUSR, S_IWUSR, S_IXUSR
 from sys import exit
 

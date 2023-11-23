@@ -13,6 +13,7 @@ SquadApi.configure(cache=3600, url="https://qa-reports.linaro.org/")
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def arg_parser():
     parser = argparse.ArgumentParser(description="List all results for a squad build")
 
@@ -36,6 +37,7 @@ def arg_parser():
 
     return parser
 
+
 def run():
     args = arg_parser().parse_args()
 
@@ -56,22 +58,22 @@ def run():
 
     environments = project.environments(count=ALL, ordering="slug").values()
     if not environments:
-        logger.error(f"Get environments failed. No environments found.")
+        logger.error("Get environments failed. No environments found.")
         return -1
 
     suites = project.suites(count=ALL, ordering="slug").values()
     if not suites:
-        logger.error(f"Get suites failed. No suites found.")
+        logger.error("Get suites failed. No suites found.")
         return -1
 
     # https://qa-reports.linaro.org/api/tests/
     filters = {
-      "has_known_issues": False,
-      "result": False,
+        "has_known_issues": False,
+        "result": False,
     }
     tests = build.tests(count=ALL, **filters).values()
     if not tests:
-        logger.error(f"Get tests failed. No tests found.")
+        logger.error("Get tests failed. No tests found.")
         return -1
 
     flat = []
@@ -92,6 +94,7 @@ def run():
         })
 
     print(json.dumps(flat, indent=2))
+
 
 if __name__ == "__main__":
     sys.exit(run())

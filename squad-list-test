@@ -3,16 +3,16 @@
 import argparse
 import json
 import logging
-import requests
 import sys
 from squad_client.core.api import SquadApi
-from squad_client.core.models import ALL, Squad, SquadObjectJSONEncoder, TestRun
+from squad_client.core.models import Squad, SquadObjectJSONEncoder, TestRun
 from squad_client.utils import first, getid
 
 SquadApi.configure(cache=3600, url="https://qa-reports.linaro.org/")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def arg_parser():
     parser = argparse.ArgumentParser(description="List data about a test")
@@ -54,6 +54,7 @@ def arg_parser():
     )
 
     return parser
+
 
 def run():
     args = arg_parser().parse_args()
@@ -100,17 +101,18 @@ def run():
     flat = test.__dict__
 
     flat.update({
-        "group" : group.slug,
-        "project" : project.slug,
-        "environment" : environment.slug,
-        "suite" : suite.slug,
-        "build" : build.version,
-        "metadata" : test_run.metadata,
+        "group": group.slug,
+        "project": project.slug,
+        "environment": environment.slug,
+        "suite": suite.slug,
+        "build": build.version,
+        "metadata": test_run.metadata,
     })
 
     flat.pop("test_run")
 
     print(json.dumps(flat, indent=2, cls=SquadObjectJSONEncoder))
+
 
 if __name__ == "__main__":
     sys.exit(run())

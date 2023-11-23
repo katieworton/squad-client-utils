@@ -5,13 +5,14 @@ import json
 import logging
 import sys
 from squad_client.core.api import SquadApi
-from squad_client.core.models import ALL, Build, Squad
+from squad_client.core.models import Build, Squad
 from squad_client.utils import getid
 
 SquadApi.configure(cache=3600, url="https://qa-reports.linaro.org/")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def arg_parser():
     parser = argparse.ArgumentParser(description="List the result history of a test")
@@ -54,6 +55,7 @@ def arg_parser():
 
     return parser
 
+
 def run():
     args = arg_parser().parse_args()
 
@@ -61,7 +63,7 @@ def run():
     if group is None:
         logger.error(f"Get group failed. Group not found: '{args.group}'.")
         return -1
-    
+
     project = group.project(args.project)
     if project is None:
         logger.error(f"Get project failed. Project not found: '{args.project}'.")
@@ -101,7 +103,7 @@ def run():
         if test_build is None:
             logger.error(f"Get build failed. Build not found: '{test.build}'.")
             return -1
-                        
+
         flat.append({
             "group": group.slug,
             "project": project.slug,
@@ -112,8 +114,9 @@ def run():
             "status": test.status,
             "has_known_issues": test.has_known_issues,
         })
-        
+
     print(json.dumps(flat, indent=2))
+
 
 if __name__ == "__main__":
     sys.exit(run())

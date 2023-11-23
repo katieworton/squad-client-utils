@@ -8,80 +8,73 @@
 
 
 import argparse
-import difflib
 import json
 import logging
 import os
-import re
 import sys
-import subprocess as sp
 from pathlib import Path
-from calendar import monthrange
 from collections import defaultdict
-from datetime import datetime, timedelta, date
-from multiprocessing import Pool
+from datetime import timedelta, date
 from squad_client.core.api import SquadApi
-from squad_client.core.models import Squad, ALL, Test
-from squad_client.shortcuts import download_tests as download
-from squad_client.shortcuts import get_build
+from squad_client.core.models import Squad, ALL
 from squad_client.utils import getid
 
 squad_host_url = "https://qa-reports.linaro.org/"
-SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST",squad_host_url))
+SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", squad_host_url))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 KNOWN_ARCHITECTURES = [
-        "arc",
-        "arm",
-        "arm64",
-        "i386",
-        "mips",
-        "parisc",
-        "powerpc",
-        "riscv",
-        "s390",
-        "sh",
-        "sparc",
-        "x86_64",
+    "arc",
+    "arm",
+    "arm64",
+    "i386",
+    "mips",
+    "parisc",
+    "powerpc",
+    "riscv",
+    "s390",
+    "sh",
+    "sparc",
+    "x86_64",
 ]
 
 KNOWN_DEVICES = [
-        "bcm2711-rpi-4-b",
-        "dragonboard-410c",
-        "dragonboard-820c",
-        "dragonboard-845c",
-        "fvp-aemva",
-        "hi6220-hikey",
-        "i386",
-        "juno-r2",
-        "nxp-ls2088",
-        "qemu_arm",
-        "qemu_arm64",
-        "qemu_i386",
-        "qemu_x86_64",
-        "qemu-arm64",
-        "qemu-arm64be",
-        "qemu-armv5",
-        "qemu-armv7",
-        "qemu-armv7be",
-        "qemu-i386",
-        "qemu-mips32",
-        "qemu-mips32el",
-        "qemu-mips64",
-        "qemu-mips64el",
-        "qemu-ppc32",
-        "qemu-ppc64",
-        "qemu-ppc64le",
-        "qemu-riscv32",
-        "qemu-riscv64",
-        "qemu-s390",
-        "qemu-sh4",
-        "qemu-sparc64",
-        "qemu-x86_64",
-        "x15",
-        "x86",
+    "bcm2711-rpi-4-b",
+    "dragonboard-410c",
+    "dragonboard-820c",
+    "dragonboard-845c",
+    "fvp-aemva",
+    "hi6220-hikey",
+    "i386",
+    "juno-r2",
+    "nxp-ls2088",
+    "qemu_arm",
+    "qemu_arm64",
+    "qemu_i386",
+    "qemu_x86_64",
+    "qemu-arm64",
+    "qemu-arm64be",
+    "qemu-armv5",
+    "qemu-armv7",
+    "qemu-armv7be",
+    "qemu-i386",
+    "qemu-mips32",
+    "qemu-mips32el",
+    "qemu-mips64",
+    "qemu-mips64el",
+    "qemu-ppc32",
+    "qemu-ppc64",
+    "qemu-ppc64le",
+    "qemu-riscv32",
+    "qemu-riscv64",
+    "qemu-s390",
+    "qemu-sh4",
+    "qemu-sparc64",
+    "qemu-x86_64",
+    "x15",
+    "x86",
 ]
 
 KNOWN_SUITES = [
@@ -173,43 +166,44 @@ KNOWN_SUITES = [
     "vdso",
 ]
 
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Compare builds within SQUAD")
 
     parser.add_argument(
-            "--group",
-            required=True,
-            help="squad group",
-            )
+        "--group",
+        required=True,
+        help="squad group",
+    )
 
     parser.add_argument(
-            "--project",
-            required=True,
-            help="squad project",
-            )
+        "--project",
+        required=True,
+        help="squad project",
+    )
 
     parser.add_argument(
-            "--from-datetime",
-            required=True,
-            help="Starting date time. Example: 2022-01-01 or 2022-01-01T00:00:00",
-            )
+        "--from-datetime",
+        required=True,
+        help="Starting date time. Example: 2022-01-01 or 2022-01-01T00:00:00",
+    )
 
     parser.add_argument(
-            "--to-datetime",
-            required=True,
-            help="Ending date time. Example: 2022-12-31 or 2022-12-31T00:00:00",
-            )
+        "--to-datetime",
+        required=True,
+        help="Ending date time. Example: 2022-12-31 or 2022-12-31T00:00:00",
+    )
 
     parser.add_argument(
-            "--filename", help="Name of the output file where results will be written"
-            )
+        "--filename", help="Name of the output file where results will be written"
+    )
 
     parser.add_argument(
-            "--debug",
-            action="store_true",
-            default=False,
-            help="Display debug messages",
-            )
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Display debug messages",
+    )
 
     return parser.parse_args()
 
@@ -235,7 +229,6 @@ def get_number_of_kernel_builts(project, builds):
 
 
 def get_devices(environments, all_suites, builds):
-    builds_ids = [b.id for b in builds]
     actual_devices = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
     all_testruns = {e.id: [] for e in environments}
@@ -326,12 +319,11 @@ def run():
             first_from_day = False
             from_time = f"T{from_datetime.split('T')[1]}"
         else:
-            from_time = f"T00:00:00"
+            from_time = "T00:00:00"
         if tmp_to_date == end_date:
             to_time = f"T{to_datetime.split('T')[1]}"
         else:
-            to_time = f"T23:59:59"
-
+            to_time = "T23:59:59"
 
         # if data already exists
         ask_squad = True
@@ -387,8 +379,6 @@ def run():
                     devices[dev][suite]['skip'] += devs[dev][suite]['skip']
                     devices[dev][suite]['fail'] += devs[dev][suite]['fail']
                     devices[dev][suite]['xfail'] += devs[dev][suite]['xfail']
-
-
 
     total_kernel_pushes = 0
     for build in kernel_pushes:
