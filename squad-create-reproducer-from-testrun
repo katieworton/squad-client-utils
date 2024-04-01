@@ -21,7 +21,7 @@ from squadutilslib import (
 )
 
 squad_host_url = "https://qa-reports.linaro.org/"
-SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", squad_host_url))
+SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", squad_host_url), token=getenv("SQUAD_TOKEN", None))
 
 basicConfig(level=INFO)
 logger = getLogger(__name__)
