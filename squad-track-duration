@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# vim: set ts=4
+#
+# Copyright 2024-present Linaro Limited
+#
+# SPDX-License-Identifier: MIT
+
+
+import argparse
+import json
+import logging
+import os
+import sys
+from pathlib import Path
+from datetime import timedelta, date
+from squad_client.core.api import SquadApi
+from squad_client.core.models import Squad, ALL
+import pandas as pd
+import plotly.express as px
+
+squad_host_url = "https://qa-reports.linaro.org/"
+SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", squad_host_url))
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+ARTIFACTORIAL_FILENAME = "builds.json"
+
+
+class metaFigure:
+    def __init__(self, plotly_fig, title, description):
+        self.plotly_fig = plotly_fig
+        self.title = title
+        self.description = description
+
+    def fig(self):
+        return self.fig
+
+    def title(self):
+        return self.title
+
+    def description(self):
+        return self.description
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Track duration")
+
+    parser.add_argument(
+        "--group",
+        required=True,
+        help="squad group",
+    )
+
+    parser.add_argument(
+        "--project",
+        required=True,
+        help="squad project",
+    )
+
+    parser.add_argument(
+        "--from-datetime",
+        required=True,
+        help="Starting date time. Example: 2022-01-01 or 2022-01-01T00:00:00",
+    )
+
+    parser.add_argument(
+        "--to-datetime",
+        required=True,
+        help="Ending date time. Example: 2022-12-31 or 2022-12-31T00:00:00",
+    )
+
+    parser.add_argument(
+        "--build-name",
+        required=False,
+        default="gcc-13-lkftconfig",
+        help="Build name",
+    )
+
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        default=False,
+        help="Display debug messages",
+    )
+
+    return parser.parse_args()
+
+
+def get_cache_from_artifactorial():
+    exists = os.path.exists(ARTIFACTORIAL_FILENAME)
+    if not exists:
+        return {}
+
+    with open(ARTIFACTORIAL_FILENAME, "r") as fp:
+        builds = json.load(fp)
+        return builds
+
+    return {}
+
+
+def save_build_cache_to_artifactorial(data, days_ago=None):
+    with open(ARTIFACTORIAL_FILENAME, "w") as fp:
+        json.dump(data, fp)
+
+
+def get_data(args, build_cache):
+    from_datetime = args.from_datetime
+    if "T" not in from_datetime:
+        from_datetime = f"{from_datetime}T00:00:00"
+
+    to_datetime = args.to_datetime
+    if "T" not in to_datetime:
+        to_datetime = f"{to_datetime}T23:59:59"
+
+    group = Squad().group(args.group)
+    project = group.project(args.project)
+    environments = project.environments(count=ALL).values()
+
+    from_date = from_datetime.split('T')[0]
+    to_date = to_datetime.split('T')[0]
+
+    from_year = int(from_date.split("-")[0])
+    from_month = int(from_date.split("-")[1])
+    from_day = int(from_date.split("-")[2])
+    to_year = int(to_date.split("-")[0])
+    to_month = int(to_date.split("-")[1])
+    to_day = int(to_date.split("-")[2])
+    first_from_day = True
+    tmp_data = []
+
+    tmp_from_date = date(from_year, from_month, from_day)
+    end_date = date(to_year, to_month, to_day)
+    delta = timedelta(days=1)
+    tmp_from_date -= delta
+
+    while tmp_from_date < end_date:
+        tmp_to_date = tmp_from_date + delta
+        tmp_from_date += delta
+
+        if first_from_day:
+            first_from_day = False
+            from_time = f"T{from_datetime.split('T')[1]}"
+        else:
+            from_time = "T00:00:00"
+
+        if tmp_to_date == end_date:
+            to_time = f"T{to_datetime.split('T')[1]}"
+        else:
+            to_time = "T23:59:59"
+
+        logger.info(f"Fetching builds from SQUAD, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}")
+
+        filters = {
+            "created_at__lt": f"{tmp_to_date}{to_time}",
+            "created_at__gt": f"{tmp_from_date}{from_time}",
+            "count": ALL,
+        }
+
+        builds = project.builds(**filters)
+        device_dict = {}
+        for env in environments:
+            device_dict[env.url] = env.slug
+
+        for build_id, build in builds.items():
+            if str(build_id) in build_cache.keys():
+                logger.debug(f"cached: {build_id}")
+                tmp_data = tmp_data + build_cache[str(build_id)]
+            else:
+                logger.debug(f"no-cache: {build_id}")
+                tmp_build_cache = []
+                testruns = build.testruns(count=-1, prefetch_metadata=True)
+                for testrun_key, testrun in testruns.items():
+                    device = device_dict[testrun.environment]
+                    metadata = testrun.metadata
+
+                    durations = metadata.durations
+                    if durations is None:
+                        continue
+
+                    build_name = metadata.build_name
+                    if build_name is None:
+                        continue
+
+                    boottime = durations['tests']['boot']
+                    tmp = {
+                        "build_id": build_id,
+                        "build_name": build_name,
+                        "git_describe": build.version.strip(),
+                        "device": device,
+                        "boottime": float(boottime),
+                        "finished": build.finished,
+                        "created_at": build.created_at,
+                    }
+                    tmp_data.append(tmp)
+                    tmp_build_cache.append(tmp)
+                if build.finished and len(tmp_build_cache) > 0:
+                    build_cache[str(build_id)] = tmp_build_cache
+                    logger.debug(f"finished: {build_id}, {build.finished}")
+
+    return tmp_data, build_cache
+
+
+def combine_plotly_figs_to_html(figs, html_fname, main_title, main_description,
+                                include_plotlyjs='cdn',
+                                separator=None, auto_open=False):
+    with open(html_fname, 'w') as f:
+        f.write(f"<h1>{main_title}</h1>")
+        f.write(f"<div>{main_description}</div>")
+        index = 0
+        f.write("<h2>Page content</h2>")
+        f.write("<ul>")
+        for fig in figs[1:]:
+            index = index + 1
+            f.write(f'<li><a href="#fig{index}">{fig.title}</a></li>')
+        f.write("</ul>")
+        f.write(f'<h2><a id="fig0">{figs[0].title}</a></h2>')
+        f.write(f"<div>{figs[0].description}</div>")
+        f.write(figs[0].plotly_fig.to_html(include_plotlyjs=include_plotlyjs))
+        index = 0
+        for fig in figs[1:]:
+            index = index + 1
+            if separator:
+                f.write(separator)
+            f.write(f'<h2><a id="fig{index}">{fig.title}</a></h2>')
+            f.write(f"<div>{fig.description}</div>")
+            f.write(fig.plotly_fig.to_html(full_html=False, include_plotlyjs=False))
+
+    if auto_open:
+        import webbrowser
+        uri = Path(html_fname).absolute().as_uri()
+        webbrowser.open(uri)
+
+
+def run():
+    args = parse_args()
+    if args.debug:
+        logger.setLevel(level=logging.DEBUG)
+
+    df = pd.DataFrame({
+        "build_name": [],
+        "git_describe": [],
+        "device": [],
+        "boottime": [],
+        "finished": [],
+        "created_at": [],
+    })
+
+    build_cache = get_cache_from_artifactorial()
+    data = []
+    data, build_cache = get_data(args, build_cache)
+
+    save_build_cache_to_artifactorial(build_cache)
+    for build in data:
+        df.loc[len(df.index)] = {a: build[a] for a in ["build_name", "git_describe", "device", "boottime", "created_at"]}
+
+    logger.debug("***********************")
+    logger.debug(df)
+    logger.debug(df.info())
+    logger.debug("***********************")
+    df['build_name_device'] = df.build_name + '-' + df.device
+    figure_colletion = []
+    dft = df.groupby(["created_at", "git_describe", "device", "build_name"])["boottime"].mean()
+    dft = dft.reset_index().sort_values(by="created_at")
+
+    dft = dft[dft['build_name'].isin([args.build_name])]
+    figure_colletion.append(
+        metaFigure(
+            px.line(dft, x="created_at", y="boottime", color="device", markers=True).update_xaxes(tickvals=dft['created_at'], ticktext=dft['git_describe']).update_layout(xaxis_title="Version", yaxis_title="Boot time"),
+            f"Line graph, {args.build_name}",
+            f"This line graph, is generated from build_name {args.build_name}.",
+        )
+    )
+
+    dfp = df.groupby(["created_at", "git_describe", "device", "build_name_device", "build_name"])["boottime"].mean()
+    dfp = dfp.reset_index().sort_values(by=["created_at", "build_name_device"])
+
+    #dfp = dfp[dfp['build_name'].isin(['gcc-13-lkftconfig', 'clang-17-lkftconfig'])]
+    dfp = dfp[dfp['build_name'].str.endswith(args.build_name.split('-')[-1])]
+    logger.debug(dfp.info())
+    logger.debug(dfp)
+    figure_colletion.append(
+        metaFigure(
+            px.line(dfp, x="created_at", y="boottime", color="build_name_device", markers=True, labels={"build_name_device": "Build name - device"}).update_xaxes(tickvals=dft['created_at'], ticktext=dft['git_describe']).update_layout(xaxis_title="Version", yaxis_title="Boot time"),
+            f"Line graph, {args.build_name.split('-')[-1]}",
+            f"This line graph, is generated from \"{args.build_name.split('-')[-1]}\".",
+        )
+    )
+
+    combine_plotly_figs_to_html(figure_colletion,
+                                "index.html",
+                                "This page show some interesting data around LKFT's builds",
+                                f"These graphs is based on LKFT's {args.project} branch",
+                                )
+
+    exit(0)
+
+
+if __name__ == "__main__":
+    sys.exit(run())
