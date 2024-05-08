@@ -8,10 +8,10 @@
 
 import argparse
 from collections import defaultdict
-from squad_client.core.models import Squad
-from squad_client.core.api import SquadApi
-from squad_client.utils import getid, parse_test_name
 
+from squad_client.core.api import SquadApi
+from squad_client.core.models import Squad
+from squad_client.utils import getid, parse_test_name
 
 do_color = False
 

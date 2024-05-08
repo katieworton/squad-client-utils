@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import sys
+
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Build, Squad
 from squad_client.utils import getid
@@ -76,7 +77,9 @@ def run():
 
     environment = project.environment(args.environment)
     if environment is None:
-        logger.error(f"Get environment failed. Environment not found: '{args.environment}'.")
+        logger.error(
+            f"Get environment failed. Environment not found: '{args.environment}'."
+        )
         return -1
 
     suite = project.suite(args.suite)
@@ -84,14 +87,18 @@ def run():
         logger.error(f"Get suite failed. Suite not found: '{args.suite}'.")
         return -1
 
-    tests = Squad().tests(
-        build__created_at__lte=build.created_at,
-        environment=environment.id,
-        suite=suite.id,
-        metadata__name=args.test,
-        ordering='-build_id',
-        count=30,
-    ).values()
+    tests = (
+        Squad()
+        .tests(
+            build__created_at__lte=build.created_at,
+            environment=environment.id,
+            suite=suite.id,
+            metadata__name=args.test,
+            ordering="-build_id",
+            count=30,
+        )
+        .values()
+    )
 
     if not tests:
         logger.error(f"Get tests failed. Tests not found: '{args.test}'.")
@@ -104,16 +111,18 @@ def run():
             logger.error(f"Get build failed. Build not found: '{test.build}'.")
             return -1
 
-        flat.append({
-            "group": group.slug,
-            "project": project.slug,
-            "build": test_build.version,
-            "environment": environment.slug,
-            "suite": suite.slug,
-            "test": test.short_name,
-            "status": test.status,
-            "has_known_issues": test.has_known_issues,
-        })
+        flat.append(
+            {
+                "group": group.slug,
+                "project": project.slug,
+                "build": test_build.version,
+                "environment": environment.slug,
+                "suite": suite.slug,
+                "test": test.short_name,
+                "status": test.status,
+                "has_known_issues": test.has_known_issues,
+            }
+        )
 
     print(json.dumps(flat, indent=2))
 

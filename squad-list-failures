@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import sys
+
 from squad_client.core.api import SquadApi
 from squad_client.core.models import ALL, Squad
 from squad_client.utils import getid
@@ -82,16 +83,18 @@ def run():
         environment = next(e for e in environments if e.id == getid(test.environment))
         # StopIteration
         suite = next(s for s in suites if s.id == getid(test.suite))
-        flat.append({
-            "group": group.slug,
-            "project": project.slug,
-            "build": build.version,
-            "environment": environment.slug,
-            "suite": suite.slug,
-            "test": test.short_name,
-            "status": test.status,
-            "has_known_issues": test.has_known_issues,
-        })
+        flat.append(
+            {
+                "group": group.slug,
+                "project": project.slug,
+                "build": build.version,
+                "environment": environment.slug,
+                "suite": suite.slug,
+                "test": test.short_name,
+                "status": test.status,
+                "has_known_issues": test.has_known_issues,
+            }
+        )
 
     print(json.dumps(flat, indent=2))
 

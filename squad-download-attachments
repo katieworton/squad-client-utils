@@ -6,22 +6,23 @@
 # SPDX-License-Identifier: MIT
 
 import argparse
+import contextlib
 import csv
+import glob
 import json
 import logging
-from os import chdir
-from pathlib import Path
+import lzma
 import re
 import statistics
 import sys
-from squad_client.core.api import SquadApi
-from squad_client.core.models import ALL, Squad, TestRun, Environment
-from squad_client.utils import getid
-from squad_client.shortcuts import download_attachments
-import contextlib
-import lzma
 import tarfile
-import glob
+from os import chdir
+from pathlib import Path
+
+from squad_client.core.api import SquadApi
+from squad_client.core.models import ALL, Environment, Squad, TestRun
+from squad_client.shortcuts import download_attachments
+from squad_client.utils import getid
 
 SquadApi.configure(cache=3600, url="https://qa-reports.linaro.org/")
 
@@ -76,7 +77,7 @@ def generate_files(dirname, fileprefix, create_csv):
 
     file = glob.glob(f"{dirname}/output/*.json")
     filename = Path(file[0]).name
-    filename = re.sub(r'^.*CONFIG', fileprefix, filename)
+    filename = re.sub(r"^.*CONFIG", fileprefix, filename)
     file_write = f"{dirname}/{filename}"
     # sort the json keys in the benchmark data file.
     with open(file[0], mode="r") as read_file:
@@ -92,7 +93,16 @@ def generate_files(dirname, fileprefix, create_csv):
             dict_json = json.loads(pjson)
             if not dict_json["results"]:
                 return False
-            headers = ["median", "average", "standard deviation", "Percentage of std", "name", "iteration", "name_iteration", "raw data..."]
+            headers = [
+                "median",
+                "average",
+                "standard deviation",
+                "Percentage of std",
+                "name",
+                "iteration",
+                "name_iteration",
+                "raw data...",
+            ]
             csv_writer.writerow(headers)
             for key in dict_json["results"]["_ResultData"]:
                 iterations = 0
@@ -106,12 +116,14 @@ def generate_files(dirname, fileprefix, create_csv):
                     csv_data.append(statistics.stdev(float_arr))
                     if statistics.mean(float_arr) == 0:
                         continue
-                    csv_data.append((statistics.stdev(float_arr) / statistics.mean(float_arr)) * 100)
+                    csv_data.append(
+                        (statistics.stdev(float_arr) / statistics.mean(float_arr)) * 100
+                    )
                     csv_data.append(key)
                     iterations = iterations + 1
                     csv_data.append(f"iteration_{iterations}")
                     csv_data.append(f"{key}_iteration_{iterations}")
-                    csv_data.extend(k['Values'])
+                    csv_data.extend(k["Values"])
                     csv_writer.writerow(csv_data)
     return True
 
@@ -147,7 +159,7 @@ def run():
             logger.error("Get suites failed. No suites found.")
             return -1
 
-        attachment_dir = Path('stored_attachments/' + args.build)
+        attachment_dir = Path("stored_attachments/" + args.build)
         testruns = build.testruns()
         for testrun in testruns:
             if not TestRun(testrun).attachments:
@@ -162,7 +174,9 @@ def run():
                 chdir(dirname)
                 download_attachments(TestRun(testrun))
                 chdir(sys.path[0])
-                fileprefix = f"tux-{re.sub(r'_[0-9]+$', '-', dirname.name.replace('qemu-', ''))}"
+                fileprefix = (
+                    f"tux-{re.sub(r'_[0-9]+$', '-', dirname.name.replace('qemu-', ''))}"
+                )
 
                 generate_files(dirname, fileprefix, args.csv)
 

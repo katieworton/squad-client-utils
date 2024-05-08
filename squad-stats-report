@@ -12,11 +12,12 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
 from collections import defaultdict
-from datetime import timedelta, date
+from datetime import date, timedelta
+from pathlib import Path
+
 from squad_client.core.api import SquadApi
-from squad_client.core.models import Squad, ALL
+from squad_client.core.models import ALL, Squad
 from squad_client.utils import getid
 
 squad_host_url = "https://qa-reports.linaro.org/"
@@ -243,12 +244,27 @@ def get_devices(environments, all_suites, builds):
                     for s in testrun.statuses(suite__isnull=False).values():
                         suite = all_suites[s.suite]
                         if suite.slug in KNOWN_SUITES:
-                            tests_total = s.tests_pass + s.tests_skip + s.tests_fail + s.tests_xfail
-                            actual_devices[known_device][suite.slug]['total'] += tests_total
-                            actual_devices[known_device][suite.slug]['pass'] += s.tests_pass
-                            actual_devices[known_device][suite.slug]['skip'] += s.tests_skip
-                            actual_devices[known_device][suite.slug]['fail'] += s.tests_fail
-                            actual_devices[known_device][suite.slug]['xfail'] += s.tests_xfail
+                            tests_total = (
+                                s.tests_pass
+                                + s.tests_skip
+                                + s.tests_fail
+                                + s.tests_xfail
+                            )
+                            actual_devices[known_device][suite.slug][
+                                "total"
+                            ] += tests_total
+                            actual_devices[known_device][suite.slug][
+                                "pass"
+                            ] += s.tests_pass
+                            actual_devices[known_device][suite.slug][
+                                "skip"
+                            ] += s.tests_skip
+                            actual_devices[known_device][suite.slug][
+                                "fail"
+                            ] += s.tests_fail
+                            actual_devices[known_device][suite.slug][
+                                "xfail"
+                            ] += s.tests_xfail
 
     return actual_devices
 
@@ -282,13 +298,13 @@ def run():
     project = group.project(args.project)
     environments = project.environments(count=ALL).values()
 
-    json_dir = 'stored_jsons'
+    json_dir = "stored_jsons"
     if not os.path.exists(json_dir):
         os.makedirs(json_dir)
         print(f"Created dir: {json_dir}")
 
-    from_date = from_datetime.split('T')[0]
-    to_date = to_datetime.split('T')[0]
+    from_date = from_datetime.split("T")[0]
+    to_date = to_datetime.split("T")[0]
 
     from_year = int(from_date.split("-")[0])
     from_month = int(from_date.split("-")[1])
@@ -304,7 +320,7 @@ def run():
     num_tests = []
     architectures = defaultdict(int)
     devices = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
-    filename = args.filename or f'{json_dir}/stats-{args.group}-{args.project}.json'
+    filename = args.filename or f"{json_dir}/stats-{args.group}-{args.project}.json"
     if os.path.isfile(filename):
         a = json.load(Path(filename).open(encoding="utf-8"))
 
@@ -312,7 +328,7 @@ def run():
     end_date = date(to_year, to_month, to_day)
     delta = timedelta(days=1)
     tmp_from_date -= delta
-    while (tmp_from_date < end_date):
+    while tmp_from_date < end_date:
         tmp_to_date = tmp_from_date + delta
         tmp_from_date += delta
         if first_from_day:
@@ -328,43 +344,67 @@ def run():
         # if data already exists
         ask_squad = True
         for entry in a:
-            if (entry['from_datetime'] == f"{tmp_from_date}{from_time}"
-                    and entry['to_datetime'] == f"{tmp_to_date}{to_time}"):
-                kernel_pushes.append(entry['kernel pushes'])
-                kernel_builts.append(entry['kernel builts'])
-                num_tests.append(entry['tests'])
-                for arch in entry['architectures']:
-                    architectures[arch] += entry['architectures'][arch]
+            if (
+                entry["from_datetime"] == f"{tmp_from_date}{from_time}"
+                and entry["to_datetime"] == f"{tmp_to_date}{to_time}"
+            ):
+                kernel_pushes.append(entry["kernel pushes"])
+                kernel_builts.append(entry["kernel builts"])
+                num_tests.append(entry["tests"])
+                for arch in entry["architectures"]:
+                    architectures[arch] += entry["architectures"][arch]
 
-                for dev, suites in entry['devices'].items():
+                for dev, suites in entry["devices"].items():
                     for suite in suites:
-                        devices[dev][suite]['total'] += entry['devices'][dev][suite]['total']
-                        devices[dev][suite]['pass'] += entry['devices'][dev][suite]['pass']
-                        devices[dev][suite]['skip'] += entry['devices'][dev][suite]['skip']
-                        devices[dev][suite]['fail'] += entry['devices'][dev][suite]['fail']
-                        devices[dev][suite]['xfail'] += entry['devices'][dev][suite]['xfail']
+                        devices[dev][suite]["total"] += entry["devices"][dev][suite][
+                            "total"
+                        ]
+                        devices[dev][suite]["pass"] += entry["devices"][dev][suite][
+                            "pass"
+                        ]
+                        devices[dev][suite]["skip"] += entry["devices"][dev][suite][
+                            "skip"
+                        ]
+                        devices[dev][suite]["fail"] += entry["devices"][dev][suite][
+                            "fail"
+                        ]
+                        devices[dev][suite]["xfail"] += entry["devices"][dev][suite][
+                            "xfail"
+                        ]
                 ask_squad = False
-                print(f"Found dates in JSON file {filename}, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}")
+                print(
+                    f"Found dates in JSON file {filename}, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}"
+                )
                 break
 
         if ask_squad:
-            print(f"Fetching builds from SQUAD, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}")
-            builds = project.builds(created_at__lt=f"{tmp_to_date}{to_time}", created_at__gt=f"{tmp_from_date}{from_time}", count=ALL).values()
-            number_of_kernel_builts, archs = get_number_of_kernel_builts(project, builds)
+            print(
+                f"Fetching builds from SQUAD, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}"
+            )
+            builds = project.builds(
+                created_at__lt=f"{tmp_to_date}{to_time}",
+                created_at__gt=f"{tmp_from_date}{from_time}",
+                count=ALL,
+            ).values()
+            number_of_kernel_builts, archs = get_number_of_kernel_builts(
+                project, builds
+            )
             devs = get_devices(environments, project.suites(count=ALL), builds)
             total_tests = get_total_number_of_tests(builds)
 
             d = {}
-            d['from_datetime'] = f"{tmp_from_date}{from_time}"
-            d['to_datetime'] = f"{tmp_to_date}{to_time}"
-            d['kernel pushes'] = len(builds)
-            d['kernel builts'] = number_of_kernel_builts
-            d['tests'] = total_tests
-            d['architectures'] = archs
-            d['devices'] = devs
+            d["from_datetime"] = f"{tmp_from_date}{from_time}"
+            d["to_datetime"] = f"{tmp_to_date}{to_time}"
+            d["kernel pushes"] = len(builds)
+            d["kernel builts"] = number_of_kernel_builts
+            d["tests"] = total_tests
+            d["architectures"] = archs
+            d["devices"] = devs
             a.append(d)
 
-            print(f"Write builds to JSON file {filename}, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}")
+            print(
+                f"Write builds to JSON file {filename}, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}"
+            )
             Path(filename).write_text(json.dumps(a, indent=4), encoding="utf-8")
 
             kernel_pushes.append(len(builds))
@@ -374,11 +414,11 @@ def run():
                 architectures[arch] += archs[arch]
             for dev, suites in devs.items():
                 for suite in suites:
-                    devices[dev][suite]['total'] += devs[dev][suite]['total']
-                    devices[dev][suite]['pass'] += devs[dev][suite]['pass']
-                    devices[dev][suite]['skip'] += devs[dev][suite]['skip']
-                    devices[dev][suite]['fail'] += devs[dev][suite]['fail']
-                    devices[dev][suite]['xfail'] += devs[dev][suite]['xfail']
+                    devices[dev][suite]["total"] += devs[dev][suite]["total"]
+                    devices[dev][suite]["pass"] += devs[dev][suite]["pass"]
+                    devices[dev][suite]["skip"] += devs[dev][suite]["skip"]
+                    devices[dev][suite]["fail"] += devs[dev][suite]["fail"]
+                    devices[dev][suite]["xfail"] += devs[dev][suite]["xfail"]
 
     total_kernel_pushes = 0
     for build in kernel_pushes:
@@ -394,13 +434,13 @@ def run():
     arch_lines = list()
     for arch in sorted_dict(architectures):
         arch_lines.append(f"{arch:<10} ({architectures[arch]} builds)")
-    archs_str = '\n           '.join(arch_lines)
+    archs_str = "\n           ".join(arch_lines)
 
     devices_str = ""
     device_lines = list()
     for dev in sorted(devices):
         device_lines.append(f"{dev:<20} ({len(devices[dev])} suites)")
-    devices_str += '\n           '.join(device_lines)
+    devices_str += "\n           ".join(device_lines)
 
     report = f"""
         project:       {project.slug}

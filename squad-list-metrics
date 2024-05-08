@@ -4,8 +4,9 @@ import argparse
 import json
 import logging
 import sys
+
 from squad_client.core.api import SquadApi
-from squad_client.core.models import Squad, ALL
+from squad_client.core.models import ALL, Squad
 from squad_client.utils import getid
 
 SquadApi.configure(cache=3600, url="https://qa-reports.linaro.org/")
@@ -15,7 +16,9 @@ logger = logging.getLogger(__name__)
 
 
 def arg_parser():
-    parser = argparse.ArgumentParser(description="List all of the metrics for a squad build")
+    parser = argparse.ArgumentParser(
+        description="List all of the metrics for a squad build"
+    )
 
     parser.add_argument(
         "--group",
@@ -69,23 +72,27 @@ def run():
     filters = {
         "metadata__suite": "build",
     }
-    metrics = sorted(build.metrics(count=ALL, **filters).values(), key=lambda m: m.short_name)
+    metrics = sorted(
+        build.metrics(count=ALL, **filters).values(), key=lambda m: m.short_name
+    )
     if not metrics:
         logger.error("Get metrics failed. No metrics found.")
         return -1
 
     flat = []
     for metric in metrics:
-        flat.append({
-            "id": metric.id,
-            "short_name": metric.short_name,
-            "build": build.version,
-            "environment": environments[getid(metric.environment)].slug,
-            "suite": suites[getid(metric.suite)].slug,
-            "result": metric.result,
-            "unit": metric.unit,
-            "is_outlier": metric.is_outlier,
-        })
+        flat.append(
+            {
+                "id": metric.id,
+                "short_name": metric.short_name,
+                "build": build.version,
+                "environment": environments[getid(metric.environment)].slug,
+                "suite": suites[getid(metric.suite)].slug,
+                "result": metric.result,
+                "unit": metric.unit,
+                "is_outlier": metric.is_outlier,
+            }
+        )
 
     print(json.dumps(flat, indent=2))
 

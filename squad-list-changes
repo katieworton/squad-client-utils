@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import sys
+
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad
 
@@ -14,7 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 def arg_parser():
-    parser = argparse.ArgumentParser(description="List all changes for a squad build, compared to a base build")
+    parser = argparse.ArgumentParser(
+        description="List all changes for a squad build, compared to a base build"
+    )
 
     parser.add_argument(
         "--group",
@@ -79,30 +82,34 @@ def run():
     for environment in regressions.keys():
         for suite, tests in regressions[environment].items():
             for test in tests:
-                flat.append({
-                    "group": group.slug,
-                    "project": project.slug,
-                    "build": build.version,
-                    "base_build": base_build.version,
-                    "environment": environment,
-                    "suite": suite,
-                    "test": test,
-                    "change": "regression"
-                })
+                flat.append(
+                    {
+                        "group": group.slug,
+                        "project": project.slug,
+                        "build": build.version,
+                        "base_build": base_build.version,
+                        "environment": environment,
+                        "suite": suite,
+                        "test": test,
+                        "change": "regression",
+                    }
+                )
 
     for environment in fixes.keys():
         for suite, tests in fixes[environment].items():
             for test in tests:
-                flat.append({
-                    "group": group.slug,
-                    "project": project.slug,
-                    "build": build.version,
-                    "base_build": base_build.version,
-                    "environment": environment,
-                    "suite": suite,
-                    "test": test,
-                    "change": "fix"
-                })
+                flat.append(
+                    {
+                        "group": group.slug,
+                        "project": project.slug,
+                        "build": build.version,
+                        "base_build": base_build.version,
+                        "environment": environment,
+                        "suite": suite,
+                        "test": test,
+                        "change": "fix",
+                    }
+                )
 
     print(json.dumps(flat, indent=2))
 

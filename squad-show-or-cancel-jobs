@@ -8,10 +8,10 @@
 import argparse
 import logging
 import sys
+from datetime import datetime, timedelta
+
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad
-from datetime import datetime
-from datetime import timedelta
 
 SquadApi.configure(cache=3600, url="https://qa-reports.linaro.org/")
 
@@ -88,19 +88,27 @@ def run():
         return -1
 
     n_days_ago = str(datetime.now() - timedelta(days=int(args.days))).replace(" ", "T")
-    jobs = Squad().testjobs(
-        target__id=project.id,
-        fetched=False,
-        created_at__lt=n_days_ago,
-        count=500,
-        job_status__in=args.job_status,
-        ordering="-id",
-        environment__in=args.environments,
-    ).values()
+    jobs = (
+        Squad()
+        .testjobs(
+            target__id=project.id,
+            fetched=False,
+            created_at__lt=n_days_ago,
+            count=500,
+            job_status__in=args.job_status,
+            ordering="-id",
+            environment__in=args.environments,
+        )
+        .values()
+    )
     for j in jobs:
-        print(f"{j.id} : {j.external_url} : {j.job_status}, {j.created_at}, {j.environment}")
+        print(
+            f"{j.id} : {j.external_url} : {j.job_status}, {j.created_at}, {j.environment}"
+        )
         if args.cancel:
-            print("NOTE: LAVA jobs might take a few minutes to show up as canceled in SQUAD")
+            print(
+                "NOTE: LAVA jobs might take a few minutes to show up as canceled in SQUAD"
+            )
             j.cancel()
 
 

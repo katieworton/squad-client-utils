@@ -15,10 +15,7 @@ from sys import exit
 
 from squad_client.core.api import SquadApi
 
-from squadutilslib import (
-    ReproducerNotFound,
-    get_reproducer_from_testrun,
-)
+from squadutilslib import ReproducerNotFound, get_reproducer_from_testrun
 
 squad_host_url = "https://qa-reports.linaro.org/"
 SquadApi.configure(cache=3600, url=getenv("SQUAD_HOST", squad_host_url))

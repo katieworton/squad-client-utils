@@ -8,10 +8,11 @@ Given a bad build, find the latest good one
 """
 
 
-import re
 import argparse
-from squad_client.core.models import Squad, Build
+import re
+
 from squad_client.core.api import SquadApi
+from squad_client.core.models import Build, Squad
 from squad_client.utils import first
 
 

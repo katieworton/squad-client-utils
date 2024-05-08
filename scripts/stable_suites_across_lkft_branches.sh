@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Branches can also be retrieved dynamically by 
+# Branches can also be retrieved dynamically by
 # wget "https://qa-reports.linaro.org/api/projects/?group__slug=lkft&fields=slug&slug__contains=stable-rc-linux&slug__endswith=.y" -O - \
 #  | jq -r '.results[].slug' \
 #  | sed 's/linux-stable-rc-linux-\(.*\)\.y.*/\1/' \
@@ -34,7 +34,7 @@ awk '{print $1}' stable_suites_* | sort -u > stable_suites_all_branches
 # For each suite, grep all stable_suites_* to check how stable the suite is across branches
 for suite in `cat stable_suites_all_branches`
 do
-    echo -n $suite: 
+    echo -n $suite:
     not_stable_in=""
     for branch in $branches
     do

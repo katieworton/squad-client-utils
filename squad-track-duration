@@ -348,7 +348,7 @@ def run():
     dfp = dfp.reset_index().sort_values(by=["created_at", "build_name_device"])
 
     # Filter by results from the specified build names
-    dfp = dfp[dfp['build_name'].str.endswith(args.build_name.split('-')[-1])]
+    dfp = dfp[dfp["build_name"].str.endswith(args.build_name.split("-")[-1])]
     logger.debug(dfp.info())
     logger.debug(dfp)
 

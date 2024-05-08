@@ -11,8 +11,9 @@ import argparse
 import logging
 import os
 import sys
-import yaml
 from urllib import request
+
+import yaml
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad
 from squad_client.shortcuts import download_tests as download
@@ -40,9 +41,7 @@ def parse_args():
         "--environments", help="Filter on environments (separated by ',')"
     )
 
-    parser.add_argument(
-        "--suites", help="Filter on suites (separated by ',')"
-    )
+    parser.add_argument("--suites", help="Filter on suites (separated by ',')")
 
     parser.add_argument(
         "--filename", help="Name of the output file where results will be written"
@@ -59,7 +58,14 @@ def parse_args():
 
 
 def download_tests(project, build, environments, suites, output_filename):
-    download(project, build, environments, suites, "{test.environment.slug}/{test.test_run.metadata.build_name}/{test.name} {test.status}", output_filename,)
+    download(
+        project,
+        build,
+        environments,
+        suites,
+        "{test.environment.slug}/{test.test_run.metadata.build_name}/{test.name} {test.status}",
+        output_filename,
+    )
 
 
 def run():
@@ -72,46 +78,54 @@ def run():
     group_name, project_name, build_name = args.gpb[0]
     for file in known_issue_files.split():
 
-        x = request.urlopen(f'https://raw.githubusercontent.com/Linaro/qa-reports-known-issues/master/{file}')
+        x = request.urlopen(
+            f"https://raw.githubusercontent.com/Linaro/qa-reports-known-issues/master/{file}"
+        )
         issues = yaml.safe_load(x)
         for tmp in issues["projects"][0]["known_issues"]:
             environments = []
             projects = []
             for key, value in tmp.items():
-                if 'environments' in tmp.keys():
+                if "environments" in tmp.keys():
                     environments = tmp["environments"]
                 else:
                     for matrix in tmp["matrix_apply"]:
                         environments.append(matrix["environments"])
 
-                if 'projects' in tmp.keys():
+                if "projects" in tmp.keys():
                     projects = tmp["projects"]
                 else:
                     for matrix in tmp["matrix_apply"]:
                         projects.append(matrix["projects"])
                 if "test_names" in key:
                     for argh in value:
-                        if f'{group_name}/{project_name}' in projects:
+                        if f"{group_name}/{project_name}" in projects:
                             for env in environments:
-                                known_issues_patterns.append(f"{env}/*{argh.replace('.', '?')}")
+                                known_issues_patterns.append(
+                                    f"{env}/*{argh.replace('.', '?')}"
+                                )
                 elif "test_name" in key:
-                    if f'{group_name}/{project_name}' in projects:
+                    if f"{group_name}/{project_name}" in projects:
                         for env in environments:
-                            known_issues_patterns.append(f"{env}/*{value.replace('.', '?')}")
+                            known_issues_patterns.append(
+                                f"{env}/*{value.replace('.', '?')}"
+                            )
 
-    table_filename = 'table-compat.txt'
+    table_filename = "table-compat.txt"
     headings = "non-compat | compat | build_version/device/build_name/testsuite/test\n"
     headings = f"{headings}--------------------------------------------------------------------\n"
-    with open(table_filename, 'w') as fp:
+    with open(table_filename, "w") as fp:
         fp.write(headings)
-        for (group_name, project_name, build_name) in args.gpb:
+        for group_name, project_name, build_name in args.gpb:
             group = Squad().group(group_name)
             project = group.project(project_name)
             build = get_build(build_name, project)
 
             environments = None
             if args.environments:
-                environments = [project.environment(e) for e in args.environments.split(",")]
+                environments = [
+                    project.environment(e) for e in args.environments.split(",")
+                ]
 
             suites = None
             if args.suites:
@@ -119,10 +133,10 @@ def run():
                 for s in args.suites.split(","):
                     suites += project.suites(slug__startswith=s).values()
 
-            file = f"{group.slug}-{project.slug}-{build.version}".replace('~', '')
-            file_with_ending = os.path.join(file + '.txt')
+            file = f"{group.slug}-{project.slug}-{build.version}".replace("~", "")
+            file_with_ending = os.path.join(file + ".txt")
             download_tests(project, build, environments, suites, file_with_ending)
-            file_open = open(file_with_ending, 'r')
+            file_open = open(file_with_ending, "r")
             file_lines = file_open.readlines()
 
             compatlist = {}
@@ -135,7 +149,9 @@ def run():
                 test_name, test_result = line.split()
                 if test_name in compatlist.keys():
                     if test_result != compatlist[test_name]:
-                        fp.write(f"{test_result} | {compatlist[test_name]} : {build.version}/{test_name}\n")
+                        fp.write(
+                            f"{test_result} | {compatlist[test_name]} : {build.version}/{test_name}\n"
+                        )
 
         logger.debug(f"group: {group}, project: {project}, build: {build}")
 

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from squad_client.core.models import Squad, ALL
-
+from squad_client.core.models import ALL, Squad
 
 group_slug = "lkft"
 project_slug = "linux-mainline-master"

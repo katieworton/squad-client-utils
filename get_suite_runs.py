@@ -5,11 +5,12 @@
 Get a list of suites runs across projects
 """
 
-import re
 import argparse
+import re
 from collections import defaultdict
-from squad_client.core.models import Squad, ALL
+
 from squad_client.core.api import SquadApi
+from squad_client.core.models import ALL, Squad
 
 
 def main(args):

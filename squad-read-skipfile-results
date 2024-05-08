@@ -127,7 +127,9 @@ def create_commit(repo, summary, message):
 def push_pr(token, local_repo, github_repo, summary, message, base, head):
     remote_url = local_repo.remotes.origin.url
 
-    remote_url_with_token = remote_url.replace("https://github", f"https://{token}@github")
+    remote_url_with_token = remote_url.replace(
+        "https://github", f"https://{token}@github"
+    )
 
     local_repo.git.push(
         remote_url_with_token,
@@ -211,8 +213,8 @@ def run(raw_args=None):
 
     repo.git.add(u=True)
 
-    url_split = repo.remotes.origin.url.split('/')
-    repo_name = url_split[-1].replace('.git', '')
+    url_split = repo.remotes.origin.url.split("/")
+    repo_name = url_split[-1].replace(".git", "")
     username = url_split[-2]
 
     github_repo = g.get_repo(f"{username}/{repo_name}")

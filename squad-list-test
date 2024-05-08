@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import sys
+
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad, SquadObjectJSONEncoder, TestRun
 from squad_client.utils import first, getid
@@ -76,7 +77,9 @@ def run():
 
     environment = project.environment(args.environment)
     if environment is None:
-        logger.error(f"Get environment failed. Environment not found: '{args.environment}'.")
+        logger.error(
+            f"Get environment failed. Environment not found: '{args.environment}'."
+        )
         return -1
 
     suite = project.suite(args.suite)
@@ -84,13 +87,15 @@ def run():
         logger.error(f"Get suite failed. Suite not found: '{args.suite}'.")
         return -1
 
-    test = first(Squad().tests(
-        build=build.id,
-        environment=environment.id,
-        suite=suite.id,
-        metadata__name=args.test,
-        count=1,
-    ))
+    test = first(
+        Squad().tests(
+            build=build.id,
+            environment=environment.id,
+            suite=suite.id,
+            metadata__name=args.test,
+            count=1,
+        )
+    )
 
     if not test:
         logger.error(f"Get test failed. Test not found: '{args.test}'.")
@@ -100,14 +105,16 @@ def run():
 
     flat = test.__dict__
 
-    flat.update({
-        "group": group.slug,
-        "project": project.slug,
-        "environment": environment.slug,
-        "suite": suite.slug,
-        "build": build.version,
-        "metadata": test_run.metadata,
-    })
+    flat.update(
+        {
+            "group": group.slug,
+            "project": project.slug,
+            "environment": environment.slug,
+            "suite": suite.slug,
+            "build": build.version,
+            "metadata": test_run.metadata,
+        }
+    )
 
     flat.pop("test_run")
 

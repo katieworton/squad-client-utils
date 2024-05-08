@@ -12,12 +12,13 @@ import logging
 import os
 import re
 import sys
-import requests
 from pathlib import Path
+
+import requests
 from squad_client.core.api import SquadApi
-from squad_client.core.models import Squad, Build, TestRun
+from squad_client.core.models import Build, Squad, TestRun
 from squad_client.shortcuts import get_build
-from squad_client.utils import getid, first
+from squad_client.utils import first, getid
 
 squad_host_url = "https://qa-reports.linaro.org/"
 SquadApi.configure(cache=3600, url=os.getenv("SQUAD_HOST", squad_host_url))
@@ -28,11 +29,11 @@ logger = logging.getLogger(__name__)
 
 def get_file(path):
     print(f"Getting file from {path}")
-    if re.search(r'https?://', path):
+    if re.search(r"https?://", path):
         request = requests.get(path, allow_redirects=True)
         request.raise_for_status()
-        filename = path.split('/')[-1]
-        with open(filename, 'wb') as f:
+        filename = path.split("/")[-1]
+        with open(filename, "wb") as f:
             f.write(request.content)
         return filename
     elif os.path.exists(path):
@@ -41,15 +42,24 @@ def get_file(path):
         raise Exception(f"Path {path} not found")
 
 
-def find_good_build(base_build, project, environment, build_name, suite_name, test_name):
+def find_good_build(
+    base_build, project, environment, build_name, suite_name, test_name
+):
     builds = project.builds(id__lt=base_build.id, ordering="-id", count=10).values()
     for build in builds:
-        logger.debug(f"Trying to find good test in build \"{build.version}\"", flush=True)
+        logger.debug(f'Trying to find good test in build "{build.version}"', flush=True)
         for testrun in build.testruns(environment=environment.id).values():
-            logger.debug(f"  - Trying to find {build_name} in {testrun.job_url}", flush=True)
+            logger.debug(
+                f"  - Trying to find {build_name} in {testrun.job_url}", flush=True
+            )
             if build_name == testrun.metadata.build_name:
-                logger.debug(f"    - Yay, found it, now looking for a passing {suite_name}/{test_name}", flush=True)
-                candidate_test = first(testrun.tests(metadata__suite=suite_name, metadata__name=test_name))
+                logger.debug(
+                    f"    - Yay, found it, now looking for a passing {suite_name}/{test_name}",
+                    flush=True,
+                )
+                candidate_test = first(
+                    testrun.tests(metadata__suite=suite_name, metadata__name=test_name)
+                )
                 if candidate_test is None:
                     logger.debug("      - no test in here :(", flush=True)
                     continue
@@ -60,7 +70,9 @@ def find_good_build(base_build, project, environment, build_name, suite_name, te
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Get a local bisect script within SQUAD")
+    parser = argparse.ArgumentParser(
+        description="Get a local bisect script within SQUAD"
+    )
 
     parser.add_argument(
         "--group",
@@ -116,17 +128,21 @@ def run():
         logger.error(f"Get build failed. build not found: '{args.build}'.")
         return -1
 
-    device_name, build_name, suite_name, test_name = args.fail.split('/')
-    metadata = first(Squad().suitemetadata(suite=suite_name, name=test_name, kind="test"))
+    device_name, build_name, suite_name, test_name = args.fail.split("/")
+    metadata = first(
+        Squad().suitemetadata(suite=suite_name, name=test_name, kind="test")
+    )
     if metadata is None:
-        print("There is no test named \"{suite_name}/{test_name}\"")
+        print('There is no test named "{suite_name}/{test_name}"')
         return -1
 
     environment = base_project.environment(device_name)
     build = Build(base_build.id)
     test = first(build.tests(metadata=metadata.id, environment=environment.id))
     if test is None:
-        print(f"Build \"{build.version}\" has no test \"{suite_name}/{test_name}\" available on \"{device_name}\"")
+        print(
+            f'Build "{build.version}" has no test "{suite_name}/{test_name}" available on "{device_name}"'
+        )
         return -1
 
     # In theory there should only be one of those
@@ -143,7 +159,7 @@ def run():
     build_cmdline = ""
     for line in Path(tuxmake).read_text(encoding="utf-8").split("\n"):
         logger.debug(line)
-        if '# tuxmake --runtime' in line:
+        if "# tuxmake --runtime" in line:
             line = re.sub(r"^# ", "", line)
             build_cmdline = os.path.join(build_cmdline + line).strip()
 
@@ -165,7 +181,9 @@ def run():
             good_build = Build(getid(good.build))
 
     else:
-        good_build = find_good_build(build, base_project, environment, build_name, suite_name, test_name)
+        good_build = find_good_build(
+            build, base_project, environment, build_name, suite_name, test_name
+        )
 
     if good_build is None:
         print("No good build found")
@@ -174,15 +192,22 @@ def run():
     if suite_name not in "build":
         tuxrun = get_file(f"{testrun.job_url}/reproducer")
         for line in Path(tuxrun).read_text(encoding="utf-8").split("\n"):
-            if 'tuxrun --runtime' in line:
+            if "tuxrun --runtime" in line:
                 line = re.sub(r"--kernel \S+ ", "", line)
                 line = re.sub(r"--modules \S+ ", "", line)
                 if suite_name in "boot" or "ltp-" in suite_name:
                     line = re.sub(r"--tests \S+ ", "", line)
-                build_cmdline = os.path.join(build_cmdline + ' --results-hook "' + line.strip() + ' --tuxmake ./ --save-outputs --log-file -"').strip()
+                build_cmdline = os.path.join(
+                    build_cmdline
+                    + ' --results-hook "'
+                    + line.strip()
+                    + ' --tuxmake ./ --save-outputs --log-file -"'
+                ).strip()
 
         if "ltp-" in suite_name:
-            build_cmdline = build_cmdline.replace('-"', f'- -- \'cd /opt/ltp && ./runltp -s {test_name}\'"')
+            build_cmdline = build_cmdline.replace(
+                '-"', f"- -- 'cd /opt/ltp && ./runltp -s {test_name}'\""
+            )
     print(f"Found good test on build {good_build.version}")
 
     bisect_script = f"""#!/bin/bash
@@ -198,7 +223,7 @@ else
 fi
 """
 
-    filename = f'bisect-badsha-{build.version}-{device_name}-{build_name}-{suite_name}-{test_name}.sh'
+    filename = f"bisect-badsha-{build.version}-{device_name}-{build_name}-{suite_name}-{test_name}.sh"
 
     Path(filename).write_text(bisect_script, encoding="utf-8")
 
