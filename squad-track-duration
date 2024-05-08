@@ -298,24 +298,31 @@ def run():
     data, build_cache = get_data(args, build_cache)
 
     save_build_cache_to_artifactorial(build_cache)
-    for build in data:
-        df.loc[len(df.index)] = {
-            a: build[a]
-            for a in ["build_name", "git_describe", "device", "boottime", "created_at"]
-        }
+
+    # Turn the data (list of dicts) into a pandas dataframe
+    df = pd.DataFrame(data)
 
     logger.debug("***********************")
     logger.debug(df)
     logger.debug(df.info())
     logger.debug("***********************")
+
+    # Generate a build_name_device column and add this as a column in the dataframe
     df["build_name_device"] = df.build_name + "-" + df.device
     figure_colletion = []
+
+    # Create a dataframe which groups by type then takes the mean of the boot
+    # time per type.
     dft = df.groupby(["created_at", "git_describe", "device", "build_name"])[
         "boottime"
     ].mean()
+
+    # Convert the Series object back to a DataFrame then sort by the created_at
     dft = dft.reset_index().sort_values(by="created_at")
 
+    # Filter these results by the desired build name(s)
     dft = dft[dft["build_name"].isin([args.build_name])]
+    # Create the figure to display this data
     figure_colletion.append(
         MetaFigure(
             px.line(dft, x="created_at", y="boottime", color="device", markers=True)
@@ -326,15 +333,23 @@ def run():
         )
     )
 
+    # Group and the mean of the boot time for the desired type - this time it is
+    # grouped by build_name_device, too, since we want to look at both the build
+    # and what device this was run on.
     dfp = df.groupby(
         ["created_at", "git_describe", "device", "build_name_device", "build_name"]
     )["boottime"].mean()
+    # Convert the Series object back to a DataFrame then sort by the created_at
+    # and build_name_device
     dfp = dfp.reset_index().sort_values(by=["created_at", "build_name_device"])
 
+    # Filter by results from the specified build names
     # dfp = dfp[dfp['build_name'].isin(['gcc-13-lkftconfig', 'clang-17-lkftconfig'])]
     dfp = dfp[dfp["build_name"].str.endswith(args.build_name.split("-")[-1])]
     logger.debug(dfp.info())
     logger.debug(dfp)
+
+    # Create the figure for this visualisation
     figure_colletion.append(
         MetaFigure(
             px.line(
