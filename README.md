@@ -10,6 +10,21 @@ To install requirements, from the repo base directory execute:
 pip install -r requirements.txt
 ```
 
+Optional: to install the pre-commit config for this repo, execute:
+
+```
+pip install pre-commit
+```
+Then to have pre-commit run automatically when you commit, run:
+```
+pre-commit install
+```
+Alternatively, run pre-commit manually over all files, without it being called
+on commit, run:
+```
+pre-commit run --all-files
+```
+
 ## Usage
 
 ### `squad-list-changes`: Get all of the changes for a build, compared to a base build.
