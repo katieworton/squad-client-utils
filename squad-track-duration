@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from datetime import timedelta, date
+from datetime import timedelta, datetime
 from squad_client.core.api import SquadApi
 from squad_client.core.models import Squad, ALL
 import pandas as pd
@@ -44,6 +44,23 @@ class metaFigure:
         return self.description
 
 
+def parse_datetime_from_string(datetime_string):
+    accepted_datetime_formats = ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"]
+
+    # loop through each accepted datetime format and try parse it
+    for datetime_format in accepted_datetime_formats:
+        try:
+            # If the format parses successfully, return the datetime object
+            return datetime.strptime(datetime_string, datetime_format)
+        except ValueError:
+            pass
+
+    # If no format can be parsed, raise an argument error
+    raise argparse.ArgumentTypeError(
+        f"Unsupported datetime format {datetime_string}. Accepted formats are {accepted_datetime_formats}"
+    )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Track duration")
 
@@ -61,12 +78,14 @@ def parse_args():
 
     parser.add_argument(
         "--from-datetime",
+        type=parse_datetime_from_string,
         required=True,
         help="Starting date time. Example: 2022-01-01 or 2022-01-01T00:00:00",
     )
 
     parser.add_argument(
         "--to-datetime",
+        type=parse_datetime_from_string,
         required=True,
         help="Ending date time. Example: 2022-12-31 or 2022-12-31T00:00:00",
     )
@@ -107,62 +126,70 @@ def save_build_cache_to_artifactorial(data, days_ago=None):
 
 def get_data(args, build_cache):
     from_datetime = args.from_datetime
-    if "T" not in from_datetime:
-        from_datetime = f"{from_datetime}T00:00:00"
-
     to_datetime = args.to_datetime
-    if "T" not in to_datetime:
-        to_datetime = f"{to_datetime}T23:59:59"
 
     group = Squad().group(args.group)
     project = group.project(args.project)
     environments = project.environments(count=ALL).values()
 
-    from_date = from_datetime.split('T')[0]
-    to_date = to_datetime.split('T')[0]
-
-    from_year = int(from_date.split("-")[0])
-    from_month = int(from_date.split("-")[1])
-    from_day = int(from_date.split("-")[2])
-    to_year = int(to_date.split("-")[0])
-    to_month = int(to_date.split("-")[1])
-    to_day = int(to_date.split("-")[2])
     first_from_day = True
+    final_to_date = False
     tmp_data = []
 
-    tmp_from_date = date(from_year, from_month, from_day)
-    end_date = date(to_year, to_month, to_day)
+    # Set up a delta which determines how many days of data to read from SQUAD
+    # per loop. Minimum delta is 1 day and delta must be in whole days to keep
+    # this code easy to read, understand and debug.
     delta = timedelta(days=1)
-    tmp_from_date -= delta
 
-    while tmp_from_date < end_date:
-        tmp_to_date = tmp_from_date + delta
-        tmp_from_date += delta
+    if delta.days < 1:
+        raise Exception("Minimum delta is 1 day for this code to work.")
+    if delta.seconds != 0 or delta.microseconds != 0:
+        raise Exception("Deltas must be whole days only.")
 
+    # Loops through each delta until the end date and filters the SQUAD data
+    # for that delta
+    while not final_to_date:
+        # If it is the first date in the range, use the provided start datetime
         if first_from_day:
             first_from_day = False
-            from_time = f"T{from_datetime.split('T')[1]}"
+            # Use the provided start time for the first day
+            tmp_from_datetime = from_datetime
         else:
-            from_time = "T00:00:00"
+            # For all other days, update the date by the delta then use the
+            # start of the day by zeroing hours, minutes and seconds
+            tmp_from_datetime += delta
+            tmp_from_datetime = tmp_from_datetime.replace(hour=0, minute=0, second=0)
 
-        if tmp_to_date == end_date:
-            to_time = f"T{to_datetime.split('T')[1]}"
+        # If the delta for this iteration sends us over the end of the range,
+        # use the provided end datetime
+        if tmp_from_datetime + delta >= to_datetime:
+            # We have reached the last day, so use this as the end date
+            tmp_to_datetime = to_datetime
+            final_to_date = True
         else:
-            to_time = "T23:59:59"
+            # Otherwise take the start time (with minutes zeroed) + delta
+            tmp_to_datetime = tmp_from_datetime.replace(hour=0, minute=0, second=0) + delta
 
-        logger.info(f"Fetching builds from SQUAD, from_datetime: {tmp_from_date}{from_time}, to_datetime: {tmp_to_date}{to_time}")
+        logger.info(
+            f"Fetching builds from SQUAD, from_datetime: {tmp_from_datetime}, to_datetime: {tmp_to_datetime}"
+        )
 
         filters = {
-            "created_at__lt": f"{tmp_to_date}{to_time}",
-            "created_at__gt": f"{tmp_from_date}{from_time}",
+            "created_at__lt": tmp_to_datetime.strftime("%Y-%m-%dT%H:%M:%S"),
+            "created_at__gt": tmp_from_datetime.strftime("%Y-%m-%dT%H:%M:%S"),
             "count": ALL,
         }
 
         builds = project.builds(**filters)
         device_dict = {}
+
+        # Loop through the environments and create a lookup table for URL -> device name (slug)
         for env in environments:
             device_dict[env.url] = env.slug
 
+        # Loop through the builds in the specified window and cache their data
+        # to a file if they are marked as finished. This will mean that we don't
+        # have to look them up again is SQUAD if we have already looked them up.
         for build_id, build in builds.items():
             if str(build_id) in build_cache.keys():
                 logger.debug(f"cached: {build_id}")
@@ -176,13 +203,16 @@ def get_data(args, build_cache):
                     metadata = testrun.metadata
 
                     durations = metadata.durations
+                    # Ignore testruns without duration data
                     if durations is None:
                         continue
 
                     build_name = metadata.build_name
+                    # Ignore testruns without a build_name
                     if build_name is None:
                         continue
 
+                    # Read the boot time from the duration data
                     boottime = durations['tests']['boot']
                     tmp = {
                         "build_id": build_id,
@@ -195,6 +225,7 @@ def get_data(args, build_cache):
                     }
                     tmp_data.append(tmp)
                     tmp_build_cache.append(tmp)
+                # Cache data for builds that are marked finished
                 if build.finished and len(tmp_build_cache) > 0:
                     build_cache[str(build_id)] = tmp_build_cache
                     logger.debug(f"finished: {build_id}, {build.finished}")
@@ -237,6 +268,9 @@ def run():
     args = parse_args()
     if args.debug:
         logger.setLevel(level=logging.DEBUG)
+
+    if args.from_datetime > args.to_datetime:
+        raise Exception("Start time must be earlier than end time.")
 
     df = pd.DataFrame({
         "build_name": [],
