@@ -313,60 +313,123 @@ def run():
     df["build_name_device"] = df.build_name + "-" + df.device
     figure_colletion = []
 
+    # Filter the DataFrame by the desired build name(s)
+    filtered_df1 = df[df["build_name"].isin([args.build_name])]
+
     # Create a DataFrame which groups by type then takes the mean of the boot
     # time per type.
-    dft = df.groupby(["created_at", "git_describe", "device", "build_name"])[
-        "boottime"
-    ].mean()
+    df_grouping1 = filtered_df1.groupby(
+        ["created_at", "git_describe", "device", "build_name"]
+    )
+
+    mean_boottimes1 = df_grouping1["boottime"].mean()
 
     # Convert the Series object back to a DataFrame then sort by the created_at
-    dft = dft.reset_index().sort_values(by="created_at")
+    mean_boottimes1 = mean_boottimes1.reset_index().sort_values(by="created_at")
 
-    # Filter these results by the desired build name(s)
-    dft = dft[dft["build_name"].isin([args.build_name])]
+    # Calculate how many boottimes we averaged over per device
+    count_per_device1 = df_grouping1["boottime"].count().groupby("device").sum()
+    col_name_boottime_count = "Boottimes included in average"
+    count_per_device1 = count_per_device1.reset_index().rename(
+        columns={"boottime": col_name_boottime_count}
+    )
+
+    # Create a new column with the name and count, then stick together the
+    # counts and the averages
+    count_per_device1["device_count"] = (
+        count_per_device1.device
+        + " ("
+        + count_per_device1[col_name_boottime_count].astype(str)
+        + ")"
+    )
+    mean_boottimes1 = mean_boottimes1.merge(
+        count_per_device1, on="device", how="inner", suffixes=("_1", "_2")
+    )
 
     # Create the figure to display this data
     figure_colletion.append(
         MetaFigure(
-            px.line(dft, x="created_at", y="boottime", color="device", markers=True)
-            .update_xaxes(tickvals=dft["created_at"], ticktext=dft["git_describe"])
+            px.line(
+                mean_boottimes1,
+                x="created_at",
+                y="boottime",
+                color="device_count",
+                markers=True,
+                labels={"device_count": "Device (number of boots in mean)"},
+            )
+            .update_xaxes(
+                tickvals=mean_boottimes1["created_at"],
+                ticktext=mean_boottimes1["git_describe"],
+            )
             .update_layout(xaxis_title="Version", yaxis_title="Boot time"),
             f"Line graph, {args.build_name}",
-            f"This line graph, is generated from build_name {args.build_name}.",
+            f"This line graph is generated from build_name {args.build_name}."
+            + " The graph uses the average (mean) over a number of boots for each device. The number of boots included in the average is presented in the 'Device (number of boots in mean)' in the line graph legend.",
         )
     )
+
+    # Filter the DataFrame by the desired build name(s)
+    filtered_df2 = df[df["build_name"].str.endswith(args.build_name.split("-")[-1])]
 
     # Group and the mean of the boot time for the desired type - this time it is
     # grouped by build_name_device, too, since we want to look at both the build
     # and what device this was run on.
-    dfp = df.groupby(
+    df_grouping2 = filtered_df2.groupby(
         ["created_at", "git_describe", "device", "build_name_device", "build_name"]
-    )["boottime"].mean()
+    )
+
+    mean_boottimes2 = df_grouping2["boottime"].mean()
 
     # Convert the Series object back to a DataFrame then sort by the created_at
     # and build_name_device
-    dfp = dfp.reset_index().sort_values(by=["created_at", "build_name_device"])
+    mean_boottimes2 = mean_boottimes2.reset_index().sort_values(
+        by=["created_at", "build_name_device"]
+    )
 
-    # Filter by results from the specified build names
-    dfp = dfp[dfp["build_name"].str.endswith(args.build_name.split("-")[-1])]
-    logger.debug(dfp.info())
-    logger.debug(dfp)
+    logger.debug(mean_boottimes2.info())
+    logger.debug(mean_boottimes2)
+
+    # Calculate how many boottimes we averaged over per device
+    count_per_device2 = (
+        df_grouping2["boottime"].count().groupby("build_name_device").sum()
+    )
+    count_per_device2 = count_per_device2.reset_index().rename(
+        columns={"boottime": col_name_boottime_count}
+    )
+
+    # Create a new column with the name and count, then stick together the
+    # counts and the averages
+    count_per_device2["build_name_device_count"] = (
+        count_per_device2.build_name_device
+        + " ("
+        + count_per_device2[col_name_boottime_count].astype(str)
+        + ")"
+    )
+    mean_boottimes2 = mean_boottimes2.merge(
+        count_per_device2, on="build_name_device", how="inner", suffixes=("_1", "_2")
+    )
 
     # Create the figure for this visualisation
     figure_colletion.append(
         MetaFigure(
             px.line(
-                dfp,
+                mean_boottimes2,
                 x="created_at",
                 y="boottime",
-                color="build_name_device",
+                color="build_name_device_count",
                 markers=True,
-                labels={"build_name_device": "Build name - device"},
+                labels={
+                    "build_name_device_count": "Build name - device (number of boots in mean)"
+                },
             )
-            .update_xaxes(tickvals=dft["created_at"], ticktext=dft["git_describe"])
+            .update_xaxes(
+                tickvals=mean_boottimes2["created_at"],
+                ticktext=mean_boottimes2["git_describe"],
+            )
             .update_layout(xaxis_title="Version", yaxis_title="Boot time"),
             f"Line graph, {args.build_name.split('-')[-1]}",
-            f"This line graph, is generated from \"{args.build_name.split('-')[-1]}\".",
+            f"This line graph is generated from \"{args.build_name.split('-')[-1]}\"."
+            + " The graph uses the average (mean) over a number of boots for each build_name-device combination. The number of boots included in the average is presented in the 'Build name - device (number of boots in mean)' in the line graph legend.",
         )
     )
 
