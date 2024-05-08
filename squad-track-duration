@@ -200,7 +200,7 @@ def get_data(args, build_cache):
             else:
                 logger.debug(f"no-cache: {build_id}")
                 tmp_build_cache = []
-                testruns = build.testruns(count=-1, prefetch_metadata=True)
+                testruns = build.testruns(count=ALL, prefetch_metadata=True)
                 for testrun_key, testrun in testruns.items():
                     device = device_dict[testrun.environment]
                     metadata = testrun.metadata
