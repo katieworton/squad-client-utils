@@ -284,17 +284,6 @@ def run():
     if args.start_datetime > args.end_datetime:
         raise Exception("Start time must be earlier than end time.")
 
-    df = pd.DataFrame(
-        {
-            "build_name": [],
-            "git_describe": [],
-            "device": [],
-            "boottime": [],
-            "finished": [],
-            "created_at": [],
-        }
-    )
-
     build_cache = get_cache_from_artifactorial()
     data = []
     data, build_cache = get_data(args, build_cache)
