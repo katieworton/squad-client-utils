@@ -313,8 +313,13 @@ def run():
 
     mean_boottimes1 = df_grouping1["boottime"].mean()
 
-    # Convert the Series object back to a DataFrame then sort by the created_at
-    mean_boottimes1 = mean_boottimes1.reset_index().sort_values(by="created_at")
+    # Convert the Series object back to a DataFrame then sort values first by
+    # device, then by created_at. This will make the graph legend alphabetised
+    # while also ensuring the dates for each line are ordered by created_at so
+    # the graph's lines will be drawn correctly.
+    mean_boottimes1 = mean_boottimes1.reset_index().sort_values(
+        by=["device", "created_at"]
+    )
 
     # Calculate how many boottimes we averaged over per device
     count_per_device1 = df_grouping1["boottime"].count().groupby("device").sum()
@@ -369,10 +374,12 @@ def run():
 
     mean_boottimes2 = df_grouping2["boottime"].mean()
 
-    # Convert the Series object back to a DataFrame then sort by the created_at
-    # and build_name_device
+    # Convert the Series object back to a DataFrame then sort values first by
+    # build_name_device, then by created_at. This will make the graph legend
+    # alphabetised while also ensuring the dates for each line are ordered by
+    # created_at so the graph's lines will be drawn correctly.
     mean_boottimes2 = mean_boottimes2.reset_index().sort_values(
-        by=["created_at", "build_name_device"]
+        by=["build_name_device", "created_at"]
     )
 
     logger.debug(mean_boottimes2.info())
