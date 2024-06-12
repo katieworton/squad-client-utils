@@ -156,7 +156,13 @@ def run():
 
                         # Only download the log if we don't already have it.
                         if not full_log_filename.is_file():
-                            get_file(testrun.log_file, full_log_filename)
+                            get_file(
+                                testrun.log_file,
+                                full_log_filename,
+                                headers={
+                                    "Authorization": f"token {os.getenv('SQUAD_TOKEN')}"
+                                },
+                            )
                             logger.debug(f"Downloaded {testrun.log_file}")
 
                         # Put symlinks for the log lines and the full logs next
